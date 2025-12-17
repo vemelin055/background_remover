@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Background Remover</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Боковая панель для списка файлов -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h3>Яндекс Диск</h3>
+            <button id="closeSidebar" class="btn-close">×</button>
+        </div>
+        <div class="sidebar-content">
+            <div id="sidebarAccountInfo" class="sidebar-account-info" style="display: none;">
+                <div class="account-info-item">
+                    <span class="account-label">Пользователь:</span>
+                    <span id="accountDisplayName" class="account-value">-</span>
+                </div>
+                <div class="account-info-item">
+                    <span class="account-label">Использовано:</span>
+                    <span id="accountUsedSpace" class="account-value">-</span>
+                </div>
+            </div>
+            <div id="sidebarLoading" class="sidebar-loading">Загрузка...</div>
+            <div id="sidebarFiles" class="sidebar-files"></div>
+        </div>
+    </div>
+    
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+    
+    <div class="crt-screen">
+        <div class="container">
+            <header class="header">
+                <h1 class="title">Background Remover</h1>
+                <div class="subtitle">v2.0.0</div>
+            </header>
+
+            <div class="main-content">
+                <!-- Панель конфигурации -->
+                <div class="config-panel">
+                    <div class="config-section">
+                        <label class="label">Модель API:</label>
+                        <select id="modelSelect" class="select">
+                            <option value="removebg">Remove.bg</option>
+                            <option value="clipdrop">Clipdrop</option>
+                            <option value="replicate">Replicate</option>
+                            <option value="fal" selected>FAL</option>
+                        </select>
+                    </div>
+                    <div id="falPromptSection" style="display: none; width: 100%; margin-top: 12px;">
+                        <label class="label" style="display: block; margin-bottom: 8px;">Описание объекта (FAL):</label>
+                        <input type="text" id="falPromptInput" class="input" placeholder="Например: человек, товар, фон, объект на переднем плане" style="width: 100%;">
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 8px; line-height: 1.5;">Опишите что вы хотите вырезать из фотографии. Оставьте пустым для удаления фона.</p>
+                    </div>
+                </div>
+
+                <!-- Панель Яндекс Диска -->
+                <div class="yandex-panel">
+                    <h2 class="panel-title">Яндекс Диск</h2>
+                    <div class="config-section" style="margin-bottom: 16px;">
+                        <label class="label">URL папки:</label>
+                        <input type="text" id="yandexUrlInput" class="input" placeholder="https://disk.yandex.ru/d/-uXMLsCHrFtxzg" value="https://disk.yandex.ru/d/-uXMLsCHrFtxzg">
+                        <button id="loadYandexFilesBtn" class="btn btn-small">Загрузить файлы</button>
+                    </div>
+                    <button id="openSidebarBtn" class="btn">Открыть список файлов</button>
+                    <div id="batchProgress" class="progress-container" style="display: none; margin-top: 16px;">
+                        <div class="progress-bar">
+                            <div id="progressFill" class="progress-fill"></div>
+                        </div>
+                        <div id="progressText" class="progress-text">0 / 0</div>
+                    </div>
+                </div>
+
+                <!-- Два окна для фото -->
+                <div class="windows-container">
+                    <!-- Левое окно - Upload -->
+                    <div class="window window-upload">
+                        <div class="window-header">
+                            <span class="window-title">ЗАГРУЗКА</span>
+                        </div>
+                        <div class="window-content">
+                            <div id="uploadArea" class="upload-area">
+                                <div class="upload-placeholder">
+                                    <div class="upload-icon">📁</div>
+                                    <p>Перетащите фото сюда</p>
+                                    <p class="upload-hint">или нажмите для выбора</p>
+                                </div>
+                                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                            </div>
+                            <div id="uploadPreview" class="preview-container" style="display: none;">
+                                <img id="uploadImage" class="preview-image" alt="Загруженное фото">
+                                <button id="removeImageBtn" class="btn btn-small">Удалить</button>
+                            </div>
+                            <button id="processBtn" class="btn btn-primary" style="display: none;">Обработать</button>
+                        </div>
+                    </div>
+
+                    <!-- Правое окно - Processed -->
+                    <div class="window window-processed">
+                        <div class="window-header">
+                            <span class="window-title">ОБРАБОТКА</span>
+                        </div>
+                        <div class="window-content">
+                            <div id="processedPreview" class="preview-container">
+                                <div class="placeholder-text">Обработанное фото появится здесь</div>
+                                <img id="processedImage" class="preview-image" style="display: none;" alt="Обработанное фото">
+                            </div>
+                            <div id="loadingIndicator" class="loading" style="display: none;">
+                                <div class="spinner"></div>
+                                <p>Обработка...</p>
+                            </div>
+                            <button id="downloadBtn" class="btn btn-primary" style="display: none;">Скачать</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Панель управления API ключами (правый нижний угол) -->
+    <div id="apiKeysPanel" class="api-keys-panel collapsed">
+        <div class="api-keys-header" id="apiKeysToggle">
+            <span>🔑 API Ключи</span>
+            <span class="api-keys-arrow">▼</span>
+        </div>
+        <div class="api-keys-content" id="apiKeysContent">
+            <div class="api-key-item">
+                <label class="api-key-label">Remove.bg:</label>
+                <input type="password" id="apiKeyRemovebg" class="api-key-input" placeholder="Введите ключ">
+                <button class="api-key-save" data-model="removebg">💾</button>
+            </div>
+            <div class="api-key-item">
+                <label class="api-key-label">Clipdrop:</label>
+                <input type="password" id="apiKeyClipdrop" class="api-key-input" placeholder="Введите ключ">
+                <button class="api-key-save" data-model="clipdrop">💾</button>
+            </div>
+            <div class="api-key-item">
+                <label class="api-key-label">Replicate:</label>
+                <input type="password" id="apiKeyReplicate" class="api-key-input" placeholder="Введите ключ">
+                <button class="api-key-save" data-model="replicate">💾</button>
+            </div>
+            <div class="api-key-item">
+                <label class="api-key-label">FAL:</label>
+                <input type="password" id="apiKeyFal" class="api-key-input" placeholder="Введите ключ">
+                <button class="api-key-save" data-model="fal">💾</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+
