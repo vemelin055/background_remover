@@ -851,13 +851,10 @@ class App {
 
         const apiKey = this.modelManager.getApiKey();
         // Если ключ не найден в localStorage, сервер возьмет из .env
-        // Но лучше показать предупреждение если ключ не задан нигде
-        if (!apiKey) {
-            const envKey = this.modelManager.getApiKey(model.name);
-            if (!envKey) {
-                this.showError('API ключ не найден. Установите его в панели API ключей или в .env файле');
-                return;
-            }
+        // Для FAL не требуем ключ - он автоматически берется из .env
+        if (!apiKey && model.name !== 'fal') {
+            this.showError('API ключ не найден. Установите его в панели API ключей или в .env файле');
+            return;
         }
 
         this.showLoading(true);
@@ -919,12 +916,10 @@ class App {
         }
 
         const apiKey = this.modelManager.getApiKey();
-        if (!apiKey) {
-            const envKey = this.modelManager.getApiKey(model.name);
-            if (!envKey) {
-                this.showError('API ключ не найден. Установите его в панели API ключей или в .env файле');
-                return;
-            }
+        // Для FAL не требуем ключ - он автоматически берется из .env
+        if (!apiKey && model.name !== 'fal') {
+            this.showError('API ключ не найден. Установите его в панели API ключей или в .env файле');
+            return;
         }
 
         // Получаем список файлов в папке
