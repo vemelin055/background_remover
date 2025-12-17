@@ -247,19 +247,25 @@ async def process_fal_object_removal(image_bytes: bytes, api_key: str, prompt: O
             "image_url": image_url
         }
         
-        # Используем fal_client.subscribe() для синхронной обработки
+        # Используем fal_client.submit_async() для асинхронной обработки (podobnie jak process_fal)
         # FAL_KEY должен быть установлен в окружении (загружается из .env или Railway variables)
-        def on_queue_update(update):
-            if isinstance(update, fal_client.InProgress):
-                for log in update.logs:
-                    logging.info(f"FAL Object Removal log: {log.get('message', '')}")
-        
-        result = fal_client.subscribe(
+        handler = await fal_client.submit_async(
             "fal-ai/image-editing/object-removal",
             arguments=arguments,
-            with_logs=True,
-            on_queue_update=on_queue_update,
         )
+        
+        # Ждем завершения и логируем события
+        async for event in handler.iter_events(with_logs=True):
+            # Можно логировать события если нужно
+            if hasattr(event, 'type'):
+                logging.info(f"FAL Object Removal event: {event.type}")
+            # Логируем сообщения из логов
+            if hasattr(event, 'logs') and event.logs:
+                for log in event.logs:
+                    if isinstance(log, dict) and 'message' in log:
+                        logging.info(f"FAL Object Removal log: {log.get('message', '')}")
+        
+        result = await handler.get()
         
         # Логируем результат для отладки
         logging.info(f"FAL Object Removal result type: {type(result)}, content: {str(result)[:200] if result else 'None'}")
