@@ -24,8 +24,9 @@ RUN mkdir -p templates && \
 # Открытие порта (Railway использует переменную PORT)
 EXPOSE 8000
 
-# Команда запуска (Railway автоматически устанавливает PORT через переменную окружения)
-# railway.json имеет startCommand, который использует $PORT
-# Если railway.json не используется, main.py уже использует os.getenv("PORT", 8000)
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Команда запуска
+# Railway автоматически устанавливает PORT через переменную окружения
+# main.py уже использует os.getenv("PORT", 8000), поэтому możemy просто uruchomić main.py
+# Railway.json имеет startCommand, который будет использоваться вместо CMD
+CMD ["python", "main.py"]
 
