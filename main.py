@@ -131,41 +131,31 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
         raise HTTPException(status_code=500, detail="Replicate processing timeout")
 
 async def process_fal(image_bytes: bytes, api_key: str, prompt: Optional[str] = None) -> bytes:
-    """FAL через fal-client"""
+    """FAL через fal-client используя fal-ai/imageutils/rembg"""
     import base64
-    import tempfile
-    import aiofiles
     
     # Используем FAL_KEY из .env если не передан ключ, иначе устанавливаем переданный
+    # FAL_KEY скрыт в переменных окружения (Railway variables или .env)
     if not api_key:
         api_key = os.getenv("FAL_KEY", "")
     if api_key:
         os.environ["FAL_KEY"] = api_key
     
     try:
-        # Сохраняем изображение во временный файл
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
-            tmp_file.write(image_bytes)
-            tmp_path = tmp_file.name
-        
-        # Загружаем файл на временный хостинг или используем base64
-        # Для простоты используем base64 data URL
+        # Конвертируем изображение в base64 data URL
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
         image_data_url = f"data:image/jpeg;base64,{image_base64}"
         
-        # Подготавливаем аргументы
+        # Подготавливаем аргументы для fal-ai/imageutils/rembg
+        # Этот модель не требует prompt, только image_url
         arguments = {
             "image_url": image_data_url
         }
         
-        # Добавляем промпт если указан
-        if prompt:
-            arguments["prompt"] = prompt
-        
         # Используем fal-client для асинхронной обработки
-        # FAL_KEY должен быть установлен в окружении (загружается из .env или переданный ключ)
+        # FAL_KEY должен быть установлен в окружении (загружается из .env или Railway variables)
         handler = await fal_client.submit_async(
-            "fal-ai/sam-3/image",
+            "fal-ai/imageutils/rembg",
             arguments=arguments,
         )
         
@@ -173,7 +163,7 @@ async def process_fal(image_bytes: bytes, api_key: str, prompt: Optional[str] = 
         async for event in handler.iter_events(with_logs=True):
             # Можно логировать события если нужно
             if hasattr(event, 'type'):
-                print(f"FAL event: {event.type}")
+                logging.info(f"FAL event: {event.type}")
         
         result = await handler.get()
         
@@ -203,13 +193,6 @@ async def process_fal(image_bytes: bytes, api_key: str, prompt: Optional[str] = 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"FAL processing error: {str(e)}")
-    finally:
-        # Удаляем временный файл если существует
-        try:
-            if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-        except:
-            pass
 
 # Модели
 MODELS = {
@@ -258,11 +241,8 @@ async def process_image(
     try:
         image_bytes = await image.read()
         
-        # Передаем промпт только для FAL
-        if model == "fal":
-            processed_bytes = await MODELS[model](image_bytes, api_key, prompt)
-        else:
-            processed_bytes = await MODELS[model](image_bytes, api_key)
+        # fal-ai/imageutils/rembg не требует prompt, но принимает его для совместимости
+        processed_bytes = await MODELS[model](image_bytes, api_key, prompt)
         
         return Response(
             content=processed_bytes,

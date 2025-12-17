@@ -355,13 +355,7 @@ class App {
         // Model selection
         document.getElementById('modelSelect').addEventListener('change', (e) => {
             this.modelManager.setCurrentModel(e.target.value);
-            // Показываем/скрываем поле промпта для FAL
-            const falPromptSection = document.getElementById('falPromptSection');
-            if (e.target.value === 'fal') {
-                falPromptSection.style.display = 'block';
-            } else {
-                falPromptSection.style.display = 'none';
-            }
+            // fal-ai/imageutils/rembg не требует prompt
         });
 
         // File upload
@@ -870,15 +864,8 @@ class App {
         this.hideError();
 
         try {
-            // Получаем промпт для FAL если выбран
+            // fal-ai/imageutils/rembg не требует prompt
             let prompt = null;
-            if (model.name === 'fal') {
-                prompt = document.getElementById('falPromptInput').value.trim();
-                // Если промпт пустой, используем дефолтный для удаления фона
-                if (!prompt) {
-                    prompt = 'remove background';
-                }
-            }
 
             // Обработка изображения
             const processedBlob = await this.imageProcessor.processImage(
@@ -969,14 +956,8 @@ class App {
                 // Скачиваем файл
                 const fileBlob = await this.yandexDisk.downloadFile(file.path);
 
-                // Получаем промпт для FAL если выбран
+                // fal-ai/imageutils/rembg не требует prompt
                 let prompt = null;
-                if (model.name === 'fal') {
-                    prompt = document.getElementById('falPromptInput').value.trim();
-                    if (!prompt) {
-                        prompt = 'remove background';
-                    }
-                }
 
                 // Обрабатываем
                 const processedBlob = await this.imageProcessor.processImage(
@@ -1149,9 +1130,8 @@ class App {
                 const inputId = `apiKey${model.charAt(0).toUpperCase() + model.slice(1)}`;
                 const input = document.getElementById(inputId);
                 if (input) {
-                    // Показываем только первые 4 символа для безопасности
-                    const keyPrefix = key.length > 4 ? key.substring(0, 4) : key.substring(0, key.length);
-                    input.placeholder = `••••${keyPrefix}... (сохранен)`;
+                    // Скрываем ключ за ** для безопасности
+                    input.placeholder = `**** (сохранен)`;
                 }
             }
         });
