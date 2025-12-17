@@ -953,8 +953,8 @@ class App {
 
         const apiKey = this.modelManager.getApiKey();
         // Если ключ не найден в localStorage, сервер возьмет из .env
-        // Для FAL не требуем ключ - он автоматически берется из .env
-        if (!apiKey && model.name !== 'fal') {
+        // Для FAL и FAL Object Removal не требуем ключ - он автоматически берется из .env
+        if (!apiKey && model.name !== 'fal' && model.name !== 'fal_object_removal') {
             this.showError('API ключ не найден. Установите его в панели API ключей или в .env файле');
             return;
         }
@@ -1018,8 +1018,8 @@ class App {
         }
 
         const apiKey = this.modelManager.getApiKey();
-        // Для FAL не требуем ключ - он автоматически берется из .env
-        if (!apiKey && model.name !== 'fal') {
+        // Для FAL и FAL Object Removal не требуем ключ - он автоматически берется из .env
+        if (!apiKey && model.name !== 'fal' && model.name !== 'fal_object_removal') {
             this.showError('API ключ не найден. Установите его в панели API ключей или в .env файле');
             return;
         }
