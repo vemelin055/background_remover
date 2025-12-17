@@ -613,8 +613,11 @@ class App {
             // Показываем индикатор загрузки в окне ЗАГРУЗКА
             const uploadArea = document.getElementById('uploadArea');
             const uploadPreview = document.getElementById('uploadPreview');
-            const uploadImage = document.getElementById('uploadImage');
             const processBtn = document.getElementById('processBtn');
+            
+            if (!uploadArea || !uploadPreview || !processBtn) {
+                throw new Error('Не найдены необходимые элементы интерфейса');
+            }
             
             // Скрываем область загрузки и показываем превью с загрузкой
             uploadArea.style.display = 'none';
@@ -622,7 +625,6 @@ class App {
             processBtn.style.display = 'none';
             
             // Показываем индикатор загрузки
-            uploadImage.style.display = 'none';
             uploadPreview.innerHTML = `
                 <div class="loading" style="display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 40px;">
                     <div class="spinner"></div>
@@ -648,18 +650,24 @@ class App {
             // Загружаем изображение в превью
             const reader = new FileReader();
             reader.onload = (e) => {
+                // Обновляем превью с изображением
                 uploadPreview.innerHTML = `
                     <img id="uploadImage" class="preview-image" src="${e.target.result}" alt="Загруженное фото">
                     <button id="removeImageBtn" class="btn btn-small">Удалить</button>
                 `;
                 
                 // Восстанавливаем обработчик для кнопки удаления
-                document.getElementById('removeImageBtn').addEventListener('click', () => {
-                    this.clearUpload();
-                });
+                const removeBtn = document.getElementById('removeImageBtn');
+                if (removeBtn) {
+                    removeBtn.addEventListener('click', () => {
+                        this.clearUpload();
+                    });
+                }
                 
                 // Показываем кнопку обработки
-                processBtn.style.display = 'block';
+                if (processBtn) {
+                    processBtn.style.display = 'block';
+                }
             };
             reader.readAsDataURL(fileObj);
             
