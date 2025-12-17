@@ -321,10 +321,11 @@ class ImageProcessor {
         }
     }
 
-    async placeOnTemplate(imageBlob, templatePath) {
+    async placeOnTemplate(imageBlob, templatePath, format = '1:1') {
         const formData = new FormData();
         formData.append('image', imageBlob);
         formData.append('template', templatePath);
+        formData.append('format', format);
 
         try {
             const response = await fetch('/api/place-template', {
@@ -974,10 +975,15 @@ class App {
                 prompt
             );
 
+            // Получаем выбранный формат
+            const formatSelect = document.getElementById('formatSelect');
+            const selectedFormat = formatSelect ? formatSelect.value : '1:1';
+            
             // Размещение на шаблон
             const templateBlob = await this.imageProcessor.placeOnTemplate(
                 processedBlob,
-                'default'
+                'default',
+                selectedFormat
             );
 
             // Отображение результата
@@ -1064,10 +1070,15 @@ class App {
                     prompt
                 );
 
+                // Получаем выбранный формат
+                const formatSelect = document.getElementById('formatSelect');
+                const selectedFormat = formatSelect ? formatSelect.value : '1:1';
+                
                 // Размещаем на шаблон
                 const templateBlob = await this.imageProcessor.placeOnTemplate(
                     processedBlob,
-                    'default'
+                    'default',
+                    selectedFormat
                 );
 
                 // Сохраняем в папку "Обработанные"

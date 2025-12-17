@@ -378,40 +378,47 @@ async def process_image(
 @app.post("/api/place-template")
 async def place_template(
     image: UploadFile = File(...),
-    template: str = Form("default")
+    template: str = Form("default"),
+    format: str = Form("1:1")
 ):
-    """Размещение обработанного изображения на шаблон"""
+    """Размещение обработанного изображения на шаблон с выбором формата"""
     try:
         # Загружаем изображение
         image_bytes = await image.read()
         processed_img = Image.open(io.BytesIO(image_bytes))
         
-        # Загружаем или создаем шаблон
-        template_path = f"templates/{template}.png"
-        if os.path.exists(template_path):
-            template_img = Image.open(template_path)
+        # Определяем размеры шаблона на основе формата
+        base_size = 1200  # Базовый размер
+        if format == "1:1":
+            template_width = base_size
+            template_height = base_size
+        elif format == "3:4":
+            template_width = base_size
+            template_height = int(base_size * 4 / 3)
         else:
-            # Создаем белый шаблон
-            template_img = Image.new("RGB", (1200, 1200), "white")
-            os.makedirs("templates", exist_ok=True)
-            template_img.save(template_path)
+            # По умолчанию 1:1
+            template_width = base_size
+            template_height = base_size
         
-        # Вычисляем размеры
-        max_width = int(template_img.width * 0.8)
-        max_height = int(template_img.height * 0.8)
+        # Создаем белый шаблон нужного размера
+        template_img = Image.new("RGB", (template_width, template_height), "white")
         
+        # Получаем размеры изображения
         img_width, img_height = processed_img.size
         
-        # Масштабируем если нужно
-        if img_width > max_width or img_height > max_height:
-            scale = min(max_width / img_width, max_height / img_height)
-            img_width = int(img_width * scale)
-            img_height = int(img_height * scale)
-            processed_img = processed_img.resize((img_width, img_height), Image.Resampling.LANCZOS)
+        # Размещаем изображение по центру БЕЗ уменьшения
+        # Если изображение больше шаблона, уменьшаем только если не помещается
+        if img_width > template_width or img_height > template_height:
+            # Уменьшаем только если не помещается, сохраняя пропорции
+            scale = min(template_width / img_width, template_height / img_height)
+            new_width = int(img_width * scale)
+            new_height = int(img_height * scale)
+            processed_img = processed_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            img_width, img_height = new_width, new_height
         
         # Центрируем
-        x = (template_img.width - img_width) // 2
-        y = (template_img.height - img_height) // 2
+        x = (template_width - img_width) // 2
+        y = (template_height - img_height) // 2
         
         # Создаем результат
         result = template_img.copy()
