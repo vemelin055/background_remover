@@ -81,7 +81,7 @@ async def process_clipdrop(image_bytes: bytes, api_key: str) -> bytes:
         return response.content
 
 async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
-    """Replicate API с fallback на два модели: 851-labs/background-remover (primary) i lucataco/remove-bg (fallback)"""
+    """Replicate API с fallback на три модели: bria/remove-background (primary), 851-labs/background-remover (fallback 1), lucataco/remove-bg (fallback 2)"""
     # Используем REPLICATE_API_KEY из .env если не передан ключ
     if not api_key:
         api_key = os.getenv("REPLICATE_API_KEY", "")
@@ -123,27 +123,48 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
         logging.error(f"Failed to create Replicate client: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create Replicate client: {str(e)}")
     
-    # Загружаем изображение в replicate storage через files.create()
+    # Загружаем изображение w replicate storage через client.files.create()
     # files.create() синхронный, используем asyncio.to_thread() для async
     try:
+        # Tworzymy BytesIO object z obrazu
+        file_obj = io.BytesIO(image_bytes)
+        file_obj.name = "image.jpg"
+        
+        # Używamy client.files.create() z file object
         file = await asyncio.to_thread(
-            replicate.files.create,
-            content=image_bytes,
-            filename="image.jpg",
-            type="image/jpeg"
+            client.files.create,
+            file=file_obj
         )
-        image_url = file.url if hasattr(file, 'url') else str(file)
         
-        if not image_url:
-            raise HTTPException(status_code=500, detail="Replicate: Failed to upload image, no URL returned")
+        # Wyciągamy URL z obiektu file - z logów widzimy że file.urls ma klucz 'get'
+        image_url = None
+        if hasattr(file, 'urls') and isinstance(file.urls, dict):
+            # file.urls jest słownikiem z kluczem 'get' zawierającym URL
+            if 'get' in file.urls:
+                image_url = file.urls['get']
+            elif file.urls:
+                # Bierzemy pierwszy dostępny URL
+                image_url = list(file.urls.values())[0]
+        elif hasattr(file, 'url'):
+            image_url = file.url
+        elif isinstance(file, str):
+            image_url = file
+        else:
+            # Jeśli nie możemy wyciągnąć URL, używamy obiektu file bezpośrednio
+            # Niektóre modele Replicate akceptują obiekt file
+            image_url = file
         
-        logging.info(f"Replicate image uploaded, URL: {image_url[:100]}...")
+        logging.info(f"Replicate image uploaded, URL type: {type(image_url).__name__}, value: {str(image_url)[:150] if image_url else 'None'}...")
     except Exception as e:
         logging.error(f"Replicate file upload error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Replicate file upload error: {str(e)}")
     
     # Список моделей для попытки (primary и fallback)
     models = [
+        {
+            "name": "bria/remove-background",
+            "full_id": "bria/remove-background"
+        },
         {
             "name": "851-labs/background-remover",
             "full_id": "851-labs/background-remover:9b8eab58c339c82a5da60a688a164abfa0e4f7a9b80ab7f3cf6d7a8d3e9f2a0f"
@@ -161,17 +182,29 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
             logging.info(f"Trying Replicate model {idx + 1}/{len(models)}: {model_info['name']}")
             
             # Подготавливаем input для модели
-            model_input = {
-                "image": image_url,
-                "format": "png",
-                "background_type": "rgba"  # прозрачный фон
-            }
+            # bria/remove-background wymaga URL (URI format), nie obiektu file
+            # 851-labs/background-remover używa "image", "format", "background_type"
+            # Dla bria/remove-background musimy użyć URL string, dla innych możemy użyć obiektu file lub URL
+            if model_info['name'] == "bria/remove-background":
+                # bria/remove-background wymaga URL string (URI format)
+                if not isinstance(image_url, str):
+                    raise HTTPException(status_code=500, detail="bria/remove-background requires URL string, not file object")
+                model_input = {
+                    "image": image_url
+                }
+            else:
+                # Inne modele mogą akceptować zarówno URL jak i obiekt file
+                model_input = {
+                    "image": image_url,
+                    "format": "png",
+                    "background_type": "rgba"  # прозрачный фон
+                }
             
-            # Используем replicate.run() - согласно документации Replicate
-            # replicate.run() синхронный, используем asyncio.to_thread() для async
+            # Используем client.run() - używamy utworzonego client
+            # client.run() синхронный, используем asyncio.to_thread() для async
             logging.info(f"Running model with input: {json.dumps(model_input, indent=2)}")
             output = await asyncio.to_thread(
-                replicate.run,
+                client.run,
                 model_info['full_id'],
                 input=model_input
             )
@@ -230,10 +263,6 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
             
             # Если ничего не сработало
             raise HTTPException(status_code=500, detail=f"Unexpected Replicate output format: {type(output)}, value: {str(output)[:200]}")
-            
-            # Успешно получили результат
-            logging.info(f"Replicate processing completed successfully using model: {model_info['name']}")
-            return result_bytes
             
         except HTTPException:
             # HTTPException пробрасываем дальше без fallback
