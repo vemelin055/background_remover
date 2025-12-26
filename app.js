@@ -1355,11 +1355,18 @@ class App {
 
         try {
             this.showBackgroundLoading(true);
-            document.getElementById('placeOnBackgroundBtn').style.display = 'none';
+            // Не скрываем кнопку - пользователь может попробовать снова с другим prompt
 
+            // Получаем prompt из textarea
+            const promptTextarea = document.getElementById('backgroundPrompt');
+            const prompt = promptTextarea ? promptTextarea.value : '';
+            
             // Отправляем запрос на размещение на фоне
             const formData = new FormData();
             formData.append('processedImage', this.processedImage);
+            if (prompt) {
+                formData.append('prompt', prompt);
+            }
 
             const response = await fetch('/api/place-on-background', {
                 method: 'POST',
@@ -1373,9 +1380,14 @@ class App {
 
             const blob = await response.blob();
 
-            // Отображение результата
-            const url = URL.createObjectURL(blob);
+            // Отображение результата (заменяем предыдущий, если был)
+            // Освобождаем предыдущий URL, если был
             const backgroundImg = document.getElementById('backgroundImage');
+            if (backgroundImg.src && backgroundImg.src.startsWith('blob:')) {
+                URL.revokeObjectURL(backgroundImg.src);
+            }
+            
+            const url = URL.createObjectURL(blob);
             const backgroundPlaceholder = document.getElementById('backgroundPlaceholder');
             if (backgroundPlaceholder) {
                 backgroundPlaceholder.style.display = 'none';
@@ -1420,7 +1432,7 @@ class App {
             console.error('Error placing on background:', error);
             this.showError('Ошибка размещения на фоне: ' + error.message);
             this.showBackgroundLoading(false);
-            document.getElementById('placeOnBackgroundBtn').style.display = 'block';
+            // Кнопка остается видимой - пользователь может попробовать снова
         }
     }
 
