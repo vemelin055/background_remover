@@ -127,6 +127,25 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Третье окно - Place on Background -->
+                <div class="window window-background" style="margin-top: 24px;">
+                    <div class="window-header">
+                        <span class="window-title">ФОН</span>
+                    </div>
+                    <div class="window-content">
+                        <div id="backgroundPreview" class="preview-container">
+                            <img id="backgroundImage" class="preview-image" style="display: none;" alt="Фото на фоне">
+                        </div>
+                        <div id="backgroundLoadingIndicator" class="loading" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Размещение на фоне...</p>
+                        </div>
+                        <button id="placeOnBackgroundBtn" class="btn btn-primary" style="display: none;">Разместить на фоне</button>
+                        <button id="downloadBackgroundBtn" class="btn btn-primary" style="display: none;">Скачать</button>
+                        <div id="backgroundImageDimensions" class="image-dimensions" style="display: none;"></div>
+                    </div>
+                </div>
             </div>
 
             <div id="errorMessage" class="error-message" style="display: none;"></div>

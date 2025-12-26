@@ -503,6 +503,151 @@ async def process_image(
         logging.error(f"Error in /api/process endpoint: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/place-on-background")
+async def place_on_background(
+    processedImage: UploadFile = File(...)
+):
+    """Размещение обработанного изображения на фоне используя prunaai/p-image-edit"""
+    import replicate
+    import os
+    
+    api_key = os.getenv("REPLICATE_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="REPLICATE_API_KEY not found")
+    
+    try:
+        # Загружаем обработанное изображение
+        processed_image_bytes = await processedImage.read()
+        
+        # Путь к файлу фона - пробуем разные пути
+        background_paths = [
+            "/app/background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpeg",
+            os.path.expanduser("~/background_remover/background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpeg"),
+            "/app/background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpg.pdf",
+            os.path.expanduser("~/background_remover/background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpg.pdf")
+        ]
+        
+        background_path = None
+        for path in background_paths:
+            if os.path.exists(path):
+                background_path = path
+                break
+        
+        if not os.path.exists(background_path):
+            raise HTTPException(status_code=500, detail=f"Background file not found at {background_path}")
+        
+        # Читаем файл фона
+        with open(background_path, 'rb') as f:
+            background_image_bytes = f.read()
+        
+        # Устанавливаем API токен для replicate
+        os.environ["REPLICATE_API_TOKEN"] = api_key
+        
+        # Согласно документации Replicate, можно передать file objects напрямую в replicate.run()
+        # Model prunaai/p-image-edit принимает images как список file objects или URL
+        # Передаем file objects напрямую - replicate автоматически их обработает
+        processed_file_obj = io.BytesIO(processed_image_bytes)
+        processed_file_obj.name = "processed.png"
+        background_file_obj = io.BytesIO(background_image_bytes)
+        background_file_obj.name = "background.jpeg"
+        
+        logging.info("Preparing images for prunaai/p-image-edit model...")
+        
+        # Prompt для модели
+        prompt = """Add the product from @img2 to the image @img1.
+
+The original image @img1 contains a podium without a levitating product; do not remove or replace any existing elements.
+
+The product must levitate directly above the podium, barely touching the podium surface, with a visible contact shadow.
+
+The shadow cast by the product must appear ONLY on the top horizontal surface of the podium.
+The shadow must be restricted strictly to the upper flat surface where an object could be placed.
+No shadows are allowed on the podium sides, vertical faces, edges, or base.
+No shadows from the product are allowed on the background or any other surfaces.
+
+The product must be large, visually dominant, and clearly readable.
+The product must not appear small, distant, or miniature.
+
+If the product from @img2 is horizontally oriented or elongated, rotate the product to a vertical orientation to improve composition and perceived size.
+
+The product must be well-lit with hard directional lighting.
+Use hard-edged but soft-density shadows.
+Shadows must be light, natural, and semi-transparent, with no pure black or crushed shadows.
+
+The product width must match the podium width exactly.
+The product must not be wider or narrower than the podium.
+
+The product height must start just above the podium surface and extend upward close to the top edge of the image without being cropped.
+
+Do not allow the product to overlap or cover any text elements or the character located on the right side of the image.
+
+Preserve the original camera angle, style, lighting direction, and color palette.
+Do not modify any existing elements except adding the product.
+
+Preserve the original image format, proportions, and horizontal 4:3 aspect ratio (1600×1200 equivalent).
+Do not crop or resize the image."""
+        
+        # Подготавливаем input для модели
+        # Согласно документации, images может быть списком file objects или URL
+        # @img1 - это первый image (фон), @img2 - второй image (продукт)
+        # Перемещаем указатели файлов в начало для чтения
+        background_file_obj.seek(0)
+        processed_file_obj.seek(0)
+        
+        model_input = {
+            "images": [background_file_obj, processed_file_obj],  # @img1 - фон, @img2 - продукт
+            "prompt": prompt,
+            "aspect_ratio": "4:3"  # Сохраняем соотношение сторон как в оригинале
+        }
+        
+        logging.info(f"Running prunaai/p-image-edit model...")
+        
+        # Запускаем модель
+        output = await asyncio.to_thread(
+            replicate.run,
+            "prunaai/p-image-edit",
+            input=model_input
+        )
+        
+        logging.info(f"Model output type: {type(output)}")
+        
+        # Получаем результат
+        result_bytes = None
+        if hasattr(output, 'read'):
+            result_bytes = output.read()
+        elif isinstance(output, str):
+            # Если это URL, скачиваем изображение
+            async with httpx.AsyncClient() as client:
+                response = await client.get(output, timeout=60.0)
+                if response.status_code != 200:
+                    raise HTTPException(status_code=500, detail=f"Failed to download result: {response.status_code}")
+                result_bytes = response.content
+        elif isinstance(output, list) and len(output) > 0:
+            first_item = output[0]
+            if hasattr(first_item, 'read'):
+                result_bytes = first_item.read()
+            elif isinstance(first_item, str):
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(first_item, timeout=60.0)
+                    if response.status_code != 200:
+                        raise HTTPException(status_code=500, detail=f"Failed to download result: {response.status_code}")
+                    result_bytes = response.content
+        
+        if not result_bytes:
+            raise HTTPException(status_code=500, detail="Failed to get result from model")
+        
+        logging.info(f"Place on background completed successfully, result size: {len(result_bytes)} bytes")
+        
+        return Response(
+            content=result_bytes,
+            media_type="image/png"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in /api/place-on-background endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/place-template")
 async def place_template(
     image: UploadFile = File(...),

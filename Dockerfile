@@ -17,9 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование файлов приложения
 COPY . .
 
-# Создание директории для шаблонов
+# Создание директории для шаблонов и фонов
 RUN mkdir -p templates && \
-    chmod 755 templates
+    mkdir -p background && \
+    chmod 755 templates && \
+    chmod 755 background
 
 # Открытие порта (Railway использует переменную PORT)
 EXPOSE 8000

@@ -358,6 +358,7 @@ class App {
         this.currentFileSource = null; // Информация об источнике файла: {type: 'yandex', folderUrl: '...', fileName: '...'} или null
         this.yandexFiles = [];
         this.processedImageBlob = null; // Обработанное изображение без шаблона (для изменения разрешения)
+        this.backgroundImage = null; // Изображение на фоне
         this.init();
     }
 
@@ -444,6 +445,16 @@ class App {
         // Change resolution button
         document.getElementById('changeResolutionBtn').addEventListener('click', () => {
             this.changeResolution(1200, 1600);
+        });
+
+        // Place on background button
+        document.getElementById('placeOnBackgroundBtn').addEventListener('click', () => {
+            this.placeOnBackground();
+        });
+
+        // Download background button
+        document.getElementById('downloadBackgroundBtn').addEventListener('click', () => {
+            this.downloadBackground();
         });
 
         // Yandex Disk - загрузка файлов из публичной папки
@@ -1022,8 +1033,13 @@ class App {
         processedImg.style.height = '';
         document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('changeResolutionBtn').style.display = 'none';
+        document.getElementById('placeOnBackgroundBtn').style.display = 'none';
         document.getElementById('processedImageDimensions').style.display = 'none';
+        document.getElementById('backgroundImage').style.display = 'none';
+        document.getElementById('downloadBackgroundBtn').style.display = 'none';
+        document.getElementById('backgroundImageDimensions').style.display = 'none';
         this.processedImageBlob = null;
+        this.backgroundImage = null;
     }
     
 
@@ -1145,6 +1161,7 @@ class App {
             
             document.getElementById('downloadBtn').style.display = 'block';
             document.getElementById('changeResolutionBtn').style.display = 'block';
+            document.getElementById('placeOnBackgroundBtn').style.display = 'block';
             this.processedImage = templateBlob;
             this.processedImageBlob = processedBlob; // Сохраняем обработанное изображение без шаблона для изменения разрешения
 
@@ -1315,6 +1332,101 @@ class App {
         const a = document.createElement('a');
         a.href = url;
         a.download = 'processed.png';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    async placeOnBackground() {
+        if (!this.processedImage) {
+            console.error('No processed image available');
+            return;
+        }
+
+        try {
+            this.showBackgroundLoading(true);
+            document.getElementById('placeOnBackgroundBtn').style.display = 'none';
+
+            // Отправляем запрос на размещение на фоне
+            const formData = new FormData();
+            formData.append('processedImage', this.processedImage);
+
+            const response = await fetch('/api/place-on-background', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Ошибка размещения на фоне');
+            }
+
+            const blob = await response.blob();
+
+            // Отображение результата
+            const url = URL.createObjectURL(blob);
+            const backgroundImg = document.getElementById('backgroundImage');
+            backgroundImg.src = url;
+            backgroundImg.style.display = 'block';
+            
+            // Устанавливаем те же размеры отображения, что и у изображения в ЗАГРУЗКА
+            const uploadImg = document.getElementById('uploadImage');
+            if (uploadImg && uploadImg.complete && this.uploadedImageDimensions) {
+                const rect = uploadImg.getBoundingClientRect();
+                backgroundImg.style.width = `${rect.width}px`;
+                backgroundImg.style.height = `${rect.height}px`;
+                backgroundImg.style.maxWidth = `${rect.width}px`;
+                backgroundImg.style.maxHeight = `${rect.height}px`;
+                backgroundImg.style.objectFit = 'contain';
+            }
+
+            // Показываем размеры изображения на фоне
+            backgroundImg.onload = () => {
+                const backgroundDimensionsEl = document.getElementById('backgroundImageDimensions');
+                if (backgroundDimensionsEl) {
+                    // Получаем натуральные размеры изображения
+                    backgroundDimensionsEl.textContent = `${backgroundImg.naturalWidth} × ${backgroundImg.naturalHeight} px`;
+                    backgroundDimensionsEl.style.display = 'block';
+                }
+            };
+
+            if (backgroundImg.complete) {
+                const backgroundDimensionsEl = document.getElementById('backgroundImageDimensions');
+                if (backgroundDimensionsEl) {
+                    backgroundDimensionsEl.textContent = `${backgroundImg.naturalWidth} × ${backgroundImg.naturalHeight} px`;
+                    backgroundDimensionsEl.style.display = 'block';
+                }
+            }
+
+            document.getElementById('downloadBackgroundBtn').style.display = 'block';
+            this.backgroundImage = blob;
+
+            this.showBackgroundLoading(false);
+        } catch (error) {
+            console.error('Error placing on background:', error);
+            this.showError('Ошибка размещения на фоне: ' + error.message);
+            this.showBackgroundLoading(false);
+            document.getElementById('placeOnBackgroundBtn').style.display = 'block';
+        }
+    }
+
+    showBackgroundLoading(show) {
+        const loadingEl = document.getElementById('backgroundLoadingIndicator');
+        if (loadingEl) {
+            loadingEl.style.display = show ? 'flex' : 'none';
+        }
+        const btn = document.getElementById('placeOnBackgroundBtn');
+        if (btn) {
+            btn.disabled = show;
+        }
+    }
+
+    downloadBackground() {
+        if (!this.backgroundImage) return;
+
+        const url = URL.createObjectURL(this.backgroundImage);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'background.png';
         a.click();
         URL.revokeObjectURL(url);
     }

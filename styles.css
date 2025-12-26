@@ -345,6 +345,11 @@ body::before {
     align-items: stretch;
 }
 
+.window-background {
+    grid-column: 1 / -1; /* Занимает всю ширину */
+    max-width: 100%;
+}
+
 .window {
     border: 2px solid var(--border-color);
     background: rgba(26, 26, 53, 0.6);
