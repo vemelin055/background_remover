@@ -1015,6 +1015,7 @@ class App {
         processedImg.style.width = '';
         processedImg.style.height = '';
         document.getElementById('downloadBtn').style.display = 'none';
+        document.getElementById('processedImageDimensions').style.display = 'none';
     }
     
 
@@ -1114,6 +1115,24 @@ class App {
                 processedImg.style.maxWidth = `${this.uploadedImageDimensions.width}px`;
                 processedImg.style.maxHeight = `${this.uploadedImageDimensions.height}px`;
                 processedImg.style.objectFit = 'contain';
+            }
+            
+            // Показываем размеры обработанного изображения после загрузки
+            processedImg.onload = () => {
+                const processedDimensionsEl = document.getElementById('processedImageDimensions');
+                if (processedDimensionsEl) {
+                    processedDimensionsEl.textContent = `${templateWidth} × ${templateHeight} px`;
+                    processedDimensionsEl.style.display = 'block';
+                }
+            };
+            
+            // Jeśli obraz już załadowany, od razu pokaż wymiary
+            if (processedImg.complete) {
+                const processedDimensionsEl = document.getElementById('processedImageDimensions');
+                if (processedDimensionsEl) {
+                    processedDimensionsEl.textContent = `${templateWidth} × ${templateHeight} px`;
+                    processedDimensionsEl.style.display = 'block';
+                }
             }
             
             document.getElementById('downloadBtn').style.display = 'block';
