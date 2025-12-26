@@ -768,6 +768,13 @@ class App {
                                 naturalWidth: img.naturalWidth,
                                 naturalHeight: img.naturalHeight
                             };
+                            
+                            // Показываем размеры изображения
+                            const dimensionsEl = document.getElementById('imageDimensions');
+                            if (dimensionsEl) {
+                                dimensionsEl.textContent = `${img.naturalWidth} × ${img.naturalHeight} px`;
+                                dimensionsEl.style.display = 'block';
+                            }
                         }
                     };
                     img.onload = () => {
@@ -974,6 +981,13 @@ class App {
                         naturalWidth: uploadImg.naturalWidth,
                         naturalHeight: uploadImg.naturalHeight
                     };
+                    
+                    // Показываем размеры изображения
+                    const dimensionsEl = document.getElementById('imageDimensions');
+                    if (dimensionsEl) {
+                        dimensionsEl.textContent = `${uploadImg.naturalWidth} × ${uploadImg.naturalHeight} px`;
+                        dimensionsEl.style.display = 'block';
+                    }
                 }
             };
             uploadImg.onload = () => {
@@ -994,6 +1008,7 @@ class App {
         document.getElementById('uploadArea').style.display = 'flex';
         document.getElementById('uploadPreview').style.display = 'none';
         document.getElementById('processBtn').style.display = 'none';
+        document.getElementById('imageDimensions').style.display = 'none';
         const processedImg = document.getElementById('processedImage');
         processedImg.style.display = 'none';
         // Сбрасываем размеры обработанного изображения
@@ -1001,6 +1016,7 @@ class App {
         processedImg.style.height = '';
         document.getElementById('downloadBtn').style.display = 'none';
     }
+    
 
     async processImage() {
         if (!this.currentFile) {
