@@ -1037,18 +1037,45 @@ class App {
                 prompt
             );
 
-            // Получаем размеры из слайдеров
-            const widthSlider = document.getElementById('widthSlider');
-            const heightSlider = document.getElementById('heightSlider');
-            const width = widthSlider ? parseInt(widthSlider.value) : 1200;
-            const height = heightSlider ? parseInt(heightSlider.value) : 1200;
+            // Получаем фактические отображаемые размеры изображения в ЗАГРУЗКА
+            const uploadImg = document.getElementById('uploadImage');
+            let templateWidth = 1200;
+            let templateHeight = 1200;
+            let displayWidth = null;
+            let displayHeight = null;
             
-            // Размещение на шаблон
+            if (uploadImg && uploadImg.complete) {
+                const rect = uploadImg.getBoundingClientRect();
+                // Используем натуральные размеры изображения для template (w pikselach)
+                // Ale sprawdzamy też wyświetlane wymiary
+                if (this.uploadedImageDimensions && this.uploadedImageDimensions.naturalWidth && this.uploadedImageDimensions.naturalHeight) {
+                    // Используем натуральные размеры для template
+                    templateWidth = this.uploadedImageDimensions.naturalWidth;
+                    templateHeight = this.uploadedImageDimensions.naturalHeight;
+                    // А для wyświetlania używamy wyświetlanych wymiarów
+                    displayWidth = rect.width;
+                    displayHeight = rect.height;
+                } else {
+                    // Fallback: używamy wyświetlanych wymiarów
+                    templateWidth = Math.round(rect.width);
+                    templateHeight = Math.round(rect.height);
+                    displayWidth = rect.width;
+                    displayHeight = rect.height;
+                }
+            } else {
+                // Fallback: używamy размеров из слайдеров
+                const widthSlider = document.getElementById('widthSlider');
+                const heightSlider = document.getElementById('heightSlider');
+                templateWidth = widthSlider ? parseInt(widthSlider.value) : 1200;
+                templateHeight = heightSlider ? parseInt(heightSlider.value) : 1200;
+            }
+            
+            // Размещение на шаблон с размерами оригинала
             const templateBlob = await this.imageProcessor.placeOnTemplate(
                 processedBlob,
                 'default',
-                width,
-                height
+                templateWidth,
+                templateHeight
             );
 
             // Отображение результата
@@ -1057,12 +1084,19 @@ class App {
             processedImg.src = url;
             processedImg.style.display = 'block';
             
-            // Устанавливаем те же размеры, что и у изображения в ЗАГРУЗКА
-            if (this.uploadedImageDimensions) {
+            // Устанавливаем точно такие же размеры отображения, как у изображения в ЗАГРУЗКА
+            if (displayWidth !== null && displayHeight !== null) {
+                processedImg.style.width = `${displayWidth}px`;
+                processedImg.style.height = `${displayHeight}px`;
+                processedImg.style.maxWidth = `${displayWidth}px`;
+                processedImg.style.maxHeight = `${displayHeight}px`;
+                processedImg.style.objectFit = 'contain';
+            } else if (this.uploadedImageDimensions) {
+                // Fallback: używamy zapisanych wymiarów
+                processedImg.style.width = `${this.uploadedImageDimensions.width}px`;
+                processedImg.style.height = `${this.uploadedImageDimensions.height}px`;
                 processedImg.style.maxWidth = `${this.uploadedImageDimensions.width}px`;
                 processedImg.style.maxHeight = `${this.uploadedImageDimensions.height}px`;
-                processedImg.style.width = '';
-                processedImg.style.height = '';
                 processedImg.style.objectFit = 'contain';
             }
             
