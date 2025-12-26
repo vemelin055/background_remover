@@ -341,6 +341,25 @@ def get_api_key(model: str, api_key_from_request: Optional[str] = None) -> str:
     
     return env_keys.get(model) or ""
 
+@app.get("/api/test/replicate-key")
+async def test_replicate_key():
+    """Тест проверки REPLICATE_API_KEY из переменных окружения"""
+    api_key = os.getenv("REPLICATE_API_KEY")
+    if api_key:
+        # Не возвращаем сам ключ, только информацию о его наличии
+        return {
+            "status": "ok",
+            "key_exists": True,
+            "key_length": len(api_key),
+            "key_prefix": api_key[:4] + "..." if len(api_key) > 4 else "***"
+        }
+    else:
+        return {
+            "status": "error",
+            "key_exists": False,
+            "message": "REPLICATE_API_KEY not found in environment variables"
+        }
+
 @app.get("/")
 async def root():
     """Главная страница"""
