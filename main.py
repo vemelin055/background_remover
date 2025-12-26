@@ -89,9 +89,36 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
     if not api_key:
         raise HTTPException(status_code=400, detail="Replicate API key not provided")
     
+    # Логируем доступные методы и атрибуты replicate
+    try:
+        logging.info("=== REPLICATE MODULE DEBUG INFO ===")
+        logging.info(f"replicate module type: {type(replicate)}")
+        logging.info(f"replicate module dir: {[x for x in dir(replicate) if not x.startswith('_')]}")
+        
+        # Проверяем доступные методы
+        if hasattr(replicate, 'Client'):
+            logging.info("replicate.Client exists")
+            logging.info(f"replicate.Client type: {type(replicate.Client)}")
+            logging.info(f"replicate.Client dir: {[x for x in dir(replicate.Client) if not x.startswith('_')]}")
+        
+        if hasattr(replicate, 'run'):
+            logging.info("replicate.run exists")
+            logging.info(f"replicate.run type: {type(replicate.run)}")
+        
+        if hasattr(replicate, 'files'):
+            logging.info("replicate.files exists")
+            logging.info(f"replicate.files type: {type(replicate.files)}")
+            logging.info(f"replicate.files dir: {[x for x in dir(replicate.files) if not x.startswith('_')]}")
+        
+        logging.info("=== END REPLICATE MODULE DEBUG ===")
+    except Exception as debug_error:
+        logging.warning(f"Error during replicate module debug: {str(debug_error)}")
+    
     # Создаем клиент Replicate
     try:
         client = replicate.Client(api_token=api_key)
+        logging.info(f"Replicate client created successfully, type: {type(client)}")
+        logging.info(f"Client dir: {[x for x in dir(client) if not x.startswith('_')]}")
     except Exception as e:
         logging.error(f"Failed to create Replicate client: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create Replicate client: {str(e)}")
@@ -140,45 +167,69 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
                 "background_type": "rgba"  # прозрачный фон
             }
             
-            # Используем client.run() вместо replicate.run()
-            # client.run() синхронный, используем asyncio.to_thread() для async
+            # Используем replicate.run() - согласно документации Replicate
+            # replicate.run() синхронный, используем asyncio.to_thread() для async
+            logging.info(f"Running model with input: {json.dumps(model_input, indent=2)}")
             output = await asyncio.to_thread(
-                client.run,
+                replicate.run,
                 model_info['full_id'],
                 input=model_input
             )
             
             logging.info(f"Replicate model {model_info['name']} succeeded, output type: {type(output)}")
+            logging.info(f"Replicate output value (first 200 chars): {str(output)[:200] if output else 'None'}")
+            if isinstance(output, list):
+                logging.info(f"Output is a list with {len(output)} items")
+                for idx, item in enumerate(output[:3]):  # Log first 3 items
+                    logging.info(f"  Output[{idx}]: {type(item)}, value: {str(item)[:100]}")
             
-            # output может быть URL (str), список URL (list) или файловый объект
-            output_url = None
-            if isinstance(output, str):
+            # output может быть FileOutput объект (с методом .read()) или список FileOutput
+            # Согласно документации Replicate v1.0.0+, replicate.run() возвращает FileOutput объекты
+            result_bytes = None
+            
+            if hasattr(output, 'read'):
+                # Если это FileOutput объект (replicate v1.0.0+)
+                logging.info("Output is FileOutput object, using .read() method")
+                result_bytes = output.read()
+            elif isinstance(output, list) and len(output) > 0:
+                # Если это список FileOutput объектов, берем первый
+                logging.info(f"Output is a list with {len(output)} items, using first item")
+                first_item = output[0]
+                if hasattr(first_item, 'read'):
+                    result_bytes = first_item.read()
+                elif isinstance(first_item, str):
+                    # Если это URL строка
+                    output_url = first_item
+                else:
+                    output_url = str(first_item)
+            elif isinstance(output, str):
                 # Если это строка URL
                 output_url = output
-            elif isinstance(output, list) and len(output) > 0:
-                # Если это список, берем первый элемент
-                output_url = output[0] if isinstance(output[0], str) else str(output[0])
             elif hasattr(output, 'url'):
                 # Если это объект с URL
                 output_url = output.url
-            elif hasattr(output, 'read'):
-                # Если это файловый объект
-                result_bytes = output.read()
-                logging.info(f"Replicate processing completed successfully using model: {model_info['name']}")
-                return result_bytes
             else:
-                # Пробуем преобразовать в строку
+                # Пробуем преобразовать в строку (может быть URL)
                 output_url = str(output) if output else None
             
-            if not output_url:
-                raise HTTPException(status_code=500, detail=f"Unexpected Replicate output format: {type(output)}")
+            # Если result_bytes уже получен через .read(), возвращаем его
+            if result_bytes:
+                logging.info(f"Replicate processing completed successfully using model: {model_info['name']}")
+                return result_bytes
             
-            # Скачиваем результат по URL
-            async with httpx.AsyncClient() as http_client:
-                response = await http_client.get(output_url, timeout=60.0, follow_redirects=True)
-                if response.status_code != 200:
-                    raise HTTPException(status_code=500, detail=f"Failed to download Replicate result: {response.status_code}")
-                result_bytes = response.content
+            # Если есть URL, скачиваем результат
+            if output_url:
+                logging.info(f"Downloading result from URL: {output_url[:100]}...")
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.get(output_url, timeout=60.0, follow_redirects=True)
+                    if response.status_code != 200:
+                        raise HTTPException(status_code=500, detail=f"Failed to download Replicate result: {response.status_code}")
+                    result_bytes = response.content
+                    logging.info(f"Replicate processing completed successfully using model: {model_info['name']}")
+                    return result_bytes
+            
+            # Если ничего не сработало
+            raise HTTPException(status_code=500, detail=f"Unexpected Replicate output format: {type(output)}, value: {str(output)[:200]}")
             
             # Успешно получили результат
             logging.info(f"Replicate processing completed successfully using model: {model_info['name']}")
