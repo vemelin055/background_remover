@@ -101,24 +101,20 @@ async def process_replicate(image_bytes: bytes, api_key: str, prompt: Optional[s
     except Exception as debug_error:
         logging.warning(f"Error during replicate module check: {str(debug_error)}")
     
-    # Создаем клиент Replicate
-    try:
-        client = replicate.Client(api_token=api_key)
-        logging.info("Replicate client created successfully")
-    except Exception as e:
-        logging.error(f"Failed to create Replicate client: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to create Replicate client: {str(e)}")
+    # Устанавливаем API токен для replicate
+    # Согласно документации, replicate.run() и replicate.files используют REPLICATE_API_TOKEN из env
+    os.environ["REPLICATE_API_TOKEN"] = api_key
     
-    # Загружаем изображение w replicate storage через client.files.create()
+    # Загружаем изображение в replicate storage через replicate.files.create()
     # files.create() синхронный, используем asyncio.to_thread() для async
     try:
         # Tworzymy BytesIO object z obrazu
         file_obj = io.BytesIO(image_bytes)
         file_obj.name = "image.jpg"
         
-        # Używamy client.files.create() z file object
+        # Używamy replicate.files.create() bezpośrednio (nie przez client)
         file = await asyncio.to_thread(
-            client.files.create,
+            replicate.files.create,
             file=file_obj
         )
         
@@ -186,11 +182,11 @@ async def process_replicate(image_bytes: bytes, api_key: str, prompt: Optional[s
                     "background_type": "rgba"  # прозрачный фон
                 }
             
-            # Используем client.run() - używamy utworzonego client
-            # client.run() синхронный, используем asyncio.to_thread() для async
+            # Используем replicate.run() - согласно документации Replicate
+            # replicate.run() синхронный, используем asyncio.to_thread() для async
             logging.info(f"Running model with input: {json.dumps(model_input, indent=2)}")
             output = await asyncio.to_thread(
-                client.run,
+                replicate.run,
                 model_info['full_id'],
                 input=model_input
             )
