@@ -1034,6 +1034,7 @@ class App {
         document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('changeResolutionBtn').style.display = 'none';
         document.getElementById('placeOnBackgroundBtn').style.display = 'none';
+        document.getElementById('promptEditor').style.display = 'none';
         document.getElementById('processedImageDimensions').style.display = 'none';
         const backgroundImg = document.getElementById('backgroundImage');
         if (backgroundImg) {
@@ -1169,6 +1170,9 @@ class App {
             document.getElementById('downloadBtn').style.display = 'block';
             document.getElementById('changeResolutionBtn').style.display = 'block';
             document.getElementById('placeOnBackgroundBtn').style.display = 'block';
+            document.getElementById('promptEditor').style.display = 'block';
+            // Устанавливаем дефолтный prompt
+            this.setDefaultBackgroundPrompt();
             this.processedImage = templateBlob;
             this.processedImageBlob = processedBlob; // Сохраняем обработанное изображение без шаблона для изменения разрешения
 
@@ -1440,6 +1444,46 @@ class App {
         a.download = 'background.png';
         a.click();
         URL.revokeObjectURL(url);
+    }
+
+    setDefaultBackgroundPrompt() {
+        const defaultPrompt = `Add the product from @img2 to the image @img1.
+
+The original image @img1 contains a podium without a levitating product; do not remove or replace any existing elements.
+
+The product must levitate directly above the podium, barely touching the podium surface, with a visible contact shadow.
+
+The shadow cast by the product must appear ONLY on the top horizontal surface of the podium.
+The shadow must be restricted strictly to the upper flat surface where an object could be placed.
+No shadows are allowed on the podium sides, vertical faces, edges, or base.
+No shadows from the product are allowed on the background or any other surfaces.
+
+The product must be large, visually dominant, and clearly readable.
+The product must not appear small, distant, or miniature.
+
+If the product from @img2 is horizontally oriented or elongated, rotate the product to a vertical orientation to improve composition and perceived size.
+
+The product must be well-lit with hard directional lighting.
+Use hard-edged but soft-density shadows.
+Shadows must be light, natural, and semi-transparent, with no pure black or crushed shadows.
+
+The product width must match the podium width exactly.
+The product must not be wider or narrower than the podium.
+
+The product height must start just above the podium surface and extend upward close to the top edge of the image without being cropped.
+
+Do not allow the product to overlap or cover any text elements or the character located on the right side of the image.
+
+Preserve the original camera angle, style, lighting direction, and color palette.
+Do not modify any existing elements except adding the product.
+
+Preserve the original image format, proportions, and horizontal 4:3 aspect ratio (1600×1200 equivalent).
+Do not crop or resize the image.`;
+        
+        const promptTextarea = document.getElementById('backgroundPrompt');
+        if (promptTextarea) {
+            promptTextarea.value = defaultPrompt;
+        }
     }
 
     async changeResolution(width, height) {

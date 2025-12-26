@@ -231,7 +231,7 @@ body::before {
     white-space: nowrap;
 }
 
-.select, .input {
+.select, .input, textarea.input {
     background: rgba(15, 15, 35, 0.6);
     border: 2px solid var(--border-color);
     color: var(--text-color);
@@ -242,6 +242,12 @@ body::before {
     transition: all 0.3s;
     flex: 1;
     border-radius: 8px;
+}
+
+textarea.input {
+    resize: vertical;
+    min-height: 120px;
+    line-height: 1.5;
 }
 
 .select:focus, .input:focus {

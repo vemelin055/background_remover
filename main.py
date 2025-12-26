@@ -505,7 +505,8 @@ async def process_image(
 
 @app.post("/api/place-on-background")
 async def place_on_background(
-    processedImage: UploadFile = File(...)
+    processedImage: UploadFile = File(...),
+    prompt: Optional[str] = Form(None)
 ):
     """Размещение обработанного изображения на фоне используя prunaai/p-image-edit"""
     import replicate
@@ -553,8 +554,8 @@ async def place_on_background(
         
         logging.info("Preparing images for prunaai/p-image-edit model...")
         
-        # Prompt для модели
-        prompt = """Add the product from @img2 to the image @img1.
+        # Prompt для модели - используем переданный или дефолтный
+        default_prompt = """Add the product from @img2 to the image @img1.
 
 The original image @img1 contains a podium without a levitating product; do not remove or replace any existing elements.
 
@@ -586,6 +587,10 @@ Do not modify any existing elements except adding the product.
 
 Preserve the original image format, proportions, and horizontal 4:3 aspect ratio (1600×1200 equivalent).
 Do not crop or resize the image."""
+        
+        # Используем переданный prompt или дефолтный
+        if not prompt or prompt.strip() == "":
+            prompt = default_prompt
         
         # Подготавливаем input для модели
         # Согласно документации, images может быть списком file objects или URL
