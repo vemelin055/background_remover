@@ -80,7 +80,7 @@ async def process_clipdrop(image_bytes: bytes, api_key: str) -> bytes:
         
         return response.content
 
-async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
+async def process_replicate(image_bytes: bytes, api_key: str, prompt: Optional[str] = None) -> bytes:
     """Replicate API с fallback на три модели: bria/remove-background (primary), 851-labs/background-remover (fallback 1), lucataco/remove-bg (fallback 2)"""
     # Используем REPLICATE_API_KEY из .env если не передан ключ
     if not api_key:
@@ -89,36 +89,22 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
     if not api_key:
         raise HTTPException(status_code=400, detail="Replicate API key not provided")
     
-    # Логируем доступные методы и атрибуты replicate
+    # Проверяем доступные методы (упрощенное логирование для production)
     try:
-        logging.info("=== REPLICATE MODULE DEBUG INFO ===")
-        logging.info(f"replicate module type: {type(replicate)}")
-        logging.info(f"replicate module dir: {[x for x in dir(replicate) if not x.startswith('_')]}")
-        
-        # Проверяем доступные методы
+        logging.info("Initializing Replicate client...")
         if hasattr(replicate, 'Client'):
-            logging.info("replicate.Client exists")
-            logging.info(f"replicate.Client type: {type(replicate.Client)}")
-            logging.info(f"replicate.Client dir: {[x for x in dir(replicate.Client) if not x.startswith('_')]}")
-        
+            logging.info("replicate.Client available")
         if hasattr(replicate, 'run'):
-            logging.info("replicate.run exists")
-            logging.info(f"replicate.run type: {type(replicate.run)}")
-        
+            logging.info("replicate.run available")
         if hasattr(replicate, 'files'):
-            logging.info("replicate.files exists")
-            logging.info(f"replicate.files type: {type(replicate.files)}")
-            logging.info(f"replicate.files dir: {[x for x in dir(replicate.files) if not x.startswith('_')]}")
-        
-        logging.info("=== END REPLICATE MODULE DEBUG ===")
+            logging.info("replicate.files available")
     except Exception as debug_error:
-        logging.warning(f"Error during replicate module debug: {str(debug_error)}")
+        logging.warning(f"Error during replicate module check: {str(debug_error)}")
     
     # Создаем клиент Replicate
     try:
         client = replicate.Client(api_token=api_key)
-        logging.info(f"Replicate client created successfully, type: {type(client)}")
-        logging.info(f"Client dir: {[x for x in dir(client) if not x.startswith('_')]}")
+        logging.info("Replicate client created successfully")
     except Exception as e:
         logging.error(f"Failed to create Replicate client: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create Replicate client: {str(e)}")
@@ -533,10 +519,13 @@ async def process_image(
     
     try:
         image_bytes = await image.read()
+        logging.info(f"Processing image with model: {model}, size: {len(image_bytes)} bytes")
         
-        # fal-ai/imageutils/rembg не требует prompt, но принимает его для совместимости
+        # Вызываем соответствующую функцию обработки
+        # Все функции принимают (image_bytes, api_key, prompt)
         processed_bytes = await MODELS[model](image_bytes, api_key, prompt)
         
+        logging.info(f"Processing completed successfully, result size: {len(processed_bytes)} bytes")
         return Response(
             content=processed_bytes,
             media_type="image/png"
@@ -544,6 +533,7 @@ async def process_image(
     except HTTPException:
         raise
     except Exception as e:
+        logging.error(f"Error in /api/process endpoint: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/place-template")
