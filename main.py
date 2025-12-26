@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import httpx
 from PIL import Image
 import fal_client
+import replicate
 from bs4 import BeautifulSoup
 
 load_dotenv()
@@ -80,55 +81,57 @@ async def process_clipdrop(image_bytes: bytes, api_key: str) -> bytes:
         return response.content
 
 async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
-    """Replicate API"""
-    import base64
+    """Replicate API используя 851-labs/background-remover"""
+    # Используем REPLICATE_API_KEY из .env если не передан ключ
+    if not api_key:
+        api_key = os.getenv("REPLICATE_API_KEY", "")
     
-    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-    image_data_url = f"data:image/jpeg;base64,{image_base64}"
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Replicate API key not provided")
     
-    async with httpx.AsyncClient() as client:
-        # Создаем prediction
-        create_response = await client.post(
-            "https://api.replicate.com/v1/predictions",
-            json={
-                "version": "fb8af171c9291633f4fdc47b81132f81f2257026",
-                "input": {"image": image_data_url}
-            },
-            headers={
-                "Authorization": f"Token {api_key}",
-                "Content-Type": "application/json"
-            },
-            timeout=30.0
+    # Устанавливаем API ключ для replicate
+    os.environ["REPLICATE_API_TOKEN"] = api_key
+    
+    try:
+        # Загружаем изображение в replicate storage через files.upload()
+        # Это возвращает объект с URL, который можно использовать в input
+        file = replicate.files.upload(content=image_bytes)
+        image_url = file.url if hasattr(file, 'url') else str(file)
+        
+        # Используем replicate.run с новым моделью и URL изображения
+        output = replicate.run(
+            "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
+            input={"image": image_url}
         )
         
-        if create_response.status_code != 201:
-            raise HTTPException(status_code=create_response.status_code, detail=f"Replicate API error: {create_response.text}")
+        # output может быть файловым объектом или URL
+        if hasattr(output, 'read'):
+            # Если это файловый объект
+            result_bytes = output.read()
+        elif hasattr(output, 'url'):
+            # Если это объект с URL
+            async with httpx.AsyncClient() as client:
+                response = await client.get(output.url, timeout=60.0)
+                if response.status_code != 200:
+                    raise HTTPException(status_code=500, detail=f"Failed to download Replicate result: {response.status_code}")
+                result_bytes = response.content
+        elif isinstance(output, str):
+            # Если это строка URL
+            async with httpx.AsyncClient() as client:
+                response = await client.get(output, timeout=60.0)
+                if response.status_code != 200:
+                    raise HTTPException(status_code=500, detail=f"Failed to download Replicate result: {response.status_code}")
+                result_bytes = response.content
+        else:
+            raise HTTPException(status_code=500, detail=f"Unexpected Replicate output format: {type(output)}")
         
-        prediction = create_response.json()
-        prediction_id = prediction["id"]
-        
-        # Ждем завершения
-        max_attempts = 60
-        for _ in range(max_attempts):
-            await asyncio.sleep(1)
-            
-            status_response = await client.get(
-                f"https://api.replicate.com/v1/predictions/{prediction_id}",
-                headers={"Authorization": f"Token {api_key}"},
-                timeout=30.0
-            )
-            
-            prediction = status_response.json()
-            
-            if prediction["status"] == "succeeded":
-                # Скачиваем результат
-                output_url = prediction["output"]
-                result_response = await client.get(output_url, timeout=30.0)
-                return result_response.content
-            elif prediction["status"] == "failed":
-                raise HTTPException(status_code=500, detail="Replicate processing failed")
-        
-        raise HTTPException(status_code=500, detail="Replicate processing timeout")
+        return result_bytes
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Replicate processing error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Replicate processing error: {str(e)}")
 
 async def process_fal(image_bytes: bytes, api_key: str, prompt: Optional[str] = None) -> bytes:
     """FAL через fal-client используя fal-ai/imageutils/rembg"""

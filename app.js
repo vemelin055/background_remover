@@ -360,8 +360,8 @@ class App {
     }
 
     init() {
-        // Устанавливаем FAL как модель по умолчанию
-        this.modelManager.setCurrentModel('fal');
+        // Устанавливаем Replicate как модель по умолчанию
+        this.modelManager.setCurrentModel('replicate');
         this.setupEventListeners();
         this.setupSliders();
         // Инициализируем панель API ключей после загрузки DOM

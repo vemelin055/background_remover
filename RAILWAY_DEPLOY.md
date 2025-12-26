@@ -93,3 +93,5 @@ Po deployment:
 - Sprawdź czy są ustawione w Railway variables lub w panelu aplikacji
 - Sprawdź logi dla błędów API
 
+
+
