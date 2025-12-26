@@ -93,16 +93,30 @@ async def process_replicate(image_bytes: bytes, api_key: str) -> bytes:
     os.environ["REPLICATE_API_TOKEN"] = api_key
     
     try:
-        # Загружаем изображение в replicate storage через files.upload()
-        # Это возвращает объект с URL, который можно использовать в input
-        file = replicate.files.upload(content=image_bytes)
+        # Загружаем изображение в replicate storage через files.create()
+        # files.create() синхронный, используем asyncio.to_thread() для async
+        file = await asyncio.to_thread(
+            replicate.files.create,
+            content=image_bytes,
+            filename="image.jpg",
+            type="image/jpeg"
+        )
         image_url = file.url if hasattr(file, 'url') else str(file)
         
+        if not image_url:
+            raise HTTPException(status_code=500, detail="Replicate: Failed to upload image, no URL returned")
+        
+        logging.info(f"Replicate image uploaded, URL: {image_url[:100]}...")
+        
         # Используем replicate.run с новым моделью и URL изображения
-        output = replicate.run(
+        # replicate.run() синхронный, но możemy użyć asyncio.to_thread() dla async
+        output = await asyncio.to_thread(
+            replicate.run,
             "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
             input={"image": image_url}
         )
+        
+        logging.info(f"Replicate output type: {type(output)}")
         
         # output может быть файловым объектом или URL
         if hasattr(output, 'read'):
