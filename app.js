@@ -357,6 +357,7 @@ class App {
         this.currentFile = null;
         this.currentFileSource = null; // Информация об источнике файла: {type: 'yandex', folderUrl: '...', fileName: '...'} или null
         this.yandexFiles = [];
+        this.processedImageBlob = null; // Обработанное изображение без шаблона (для изменения разрешения)
         this.init();
     }
 
@@ -438,6 +439,11 @@ class App {
         // Download button
         document.getElementById('downloadBtn').addEventListener('click', () => {
             this.downloadProcessed();
+        });
+
+        // Change resolution button
+        document.getElementById('changeResolutionBtn').addEventListener('click', () => {
+            this.changeResolution(1200, 1600);
         });
 
         // Yandex Disk - загрузка файлов из публичной папки
@@ -1015,7 +1021,9 @@ class App {
         processedImg.style.width = '';
         processedImg.style.height = '';
         document.getElementById('downloadBtn').style.display = 'none';
+        document.getElementById('changeResolutionBtn').style.display = 'none';
         document.getElementById('processedImageDimensions').style.display = 'none';
+        this.processedImageBlob = null;
     }
     
 
@@ -1136,7 +1144,9 @@ class App {
             }
             
             document.getElementById('downloadBtn').style.display = 'block';
+            document.getElementById('changeResolutionBtn').style.display = 'block';
             this.processedImage = templateBlob;
+            this.processedImageBlob = processedBlob; // Сохраняем обработанное изображение без шаблона для изменения разрешения
 
             // Автоматическое сохранение на Яндекс Диск, если файл оттуда
             if (this.currentFileSource && this.currentFileSource.type === 'yandex') {
@@ -1307,6 +1317,57 @@ class App {
         a.download = 'processed.png';
         a.click();
         URL.revokeObjectURL(url);
+    }
+
+    async changeResolution(width, height) {
+        if (!this.processedImageBlob) {
+            console.error('No processed image blob available');
+            return;
+        }
+
+        try {
+            this.showLoading(true);
+            
+            // Размещаем обработанное изображение на шаблон с новыми размерами
+            const templateBlob = await this.imageProcessor.placeOnTemplate(
+                this.processedImageBlob,
+                'default',
+                width,
+                height
+            );
+
+            // Обновляем отображение
+            const url = URL.createObjectURL(templateBlob);
+            const processedImg = document.getElementById('processedImage');
+            processedImg.src = url;
+            
+            // Обновляем размеры отображения (используем те же, что и оригинал для визуального сравнения)
+            const uploadImg = document.getElementById('uploadImage');
+            if (uploadImg && uploadImg.complete && this.uploadedImageDimensions) {
+                const rect = uploadImg.getBoundingClientRect();
+                processedImg.style.width = `${rect.width}px`;
+                processedImg.style.height = `${rect.height}px`;
+                processedImg.style.maxWidth = `${rect.width}px`;
+                processedImg.style.maxHeight = `${rect.height}px`;
+                processedImg.style.objectFit = 'contain';
+            }
+
+            // Обновляем отображаемые размеры
+            const processedDimensionsEl = document.getElementById('processedImageDimensions');
+            if (processedDimensionsEl) {
+                processedDimensionsEl.textContent = `${width} × ${height} px`;
+                processedDimensionsEl.style.display = 'block';
+            }
+
+            // Обновляем сохраненное изображение
+            this.processedImage = templateBlob;
+            
+            this.showLoading(false);
+        } catch (error) {
+            console.error('Error changing resolution:', error);
+            this.showError('Ошибка изменения разрешения');
+            this.showLoading(false);
+        }
     }
 
     showLoading(show) {

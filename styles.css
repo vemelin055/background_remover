@@ -550,6 +550,17 @@ body::before {
     cursor: not-allowed;
 }
 
+.btn-secondary {
+    background: rgba(26, 26, 53, 0.8);
+    border: 2px solid var(--accent-pink);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: rgba(236, 72, 153, 0.2);
+    border-color: var(--accent-pink);
+    box-shadow: var(--shadow-hover), 0 0 15px rgba(236, 72, 153, 0.4);
+}
+
 .btn-primary {
     background: var(--primary-gradient);
     color: var(--text-color);
