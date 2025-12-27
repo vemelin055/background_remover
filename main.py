@@ -2160,6 +2160,14 @@ async def batch_process_folders(
                                     
                                     results["files_processed"] += 1
                                     logger.info(f"    ✓ Saved: {save_name} to {save_path}")
+                                    
+                                    yield await send_progress_update({
+                                        "type": "file_complete",
+                                        "folder_name": subfolder_name,
+                                        "file_name": file_name,
+                                        "saved_name": save_name,
+                                        "message": f"✓ Файл обработан и сохранен: {save_name} в {subfolder_output_path}"
+                                    })
                                 except Exception as save_error:
                                     error_msg = f"Ошибка сохранения {save_name}: {str(save_error)}"
                                     logger.error(f"    {error_msg}")
@@ -2295,10 +2303,30 @@ async def batch_process_folders(
                                 logger.error(f"    Error processing {file_info.get('name', 'unknown')}: {str(e)}")
                                 results["errors"].append(f"{file_info.get('name', 'unknown')}: {str(e)}")
                                 continue
+                        
+                        # Подсчитываем количество успешно обработанных файлов из этой подпапки
+                        # (results["files_processed"] содержит общее количество, нужно отслеживать отдельно)
+                        # Для простоты используем количество файлов в подпапке
+                        subfolder_files_count = len(subfolder_files)
+                        
+                        # Отправляем сообщение о завершении обработки подпапки
+                        yield await send_progress_update({
+                            "type": "folder_complete",
+                            "folder_name": subfolder_name,
+                            "folder_index": subfolder_idx,
+                            "files_processed": subfolder_files_count,
+                            "message": f"✓ Подпапка {subfolder_name} обработана: {subfolder_files_count} файлов сохранено в {subfolder_output_path}"
+                        })
                             
                 except Exception as e:
                     logger.error(f"Error processing subfolder {subfolder_name}: {str(e)}")
                     results["errors"].append(f"Подпапка {subfolder_name}: {str(e)}")
+                    yield await send_progress_update({
+                        "type": "folder_error",
+                        "folder_name": subfolder_name,
+                        "error": str(e),
+                        "message": f"✗ Ошибка обработки подпапки {subfolder_name}: {str(e)}"
+                    })
                     continue
             
             # Обрабатываем файлы напрямую в главной папке (если есть)
@@ -2446,6 +2474,14 @@ async def batch_process_folders(
                             
                             results["files_processed"] += 1
                             logger.info(f"    ✓ Saved: {save_name} to {save_path}")
+                            
+                            yield await send_progress_update({
+                                "type": "file_complete",
+                                "folder_name": folder_name,
+                                "file_name": file_name,
+                                "saved_name": save_name,
+                                "message": f"✓ Файл обработан и сохранен: {save_name} в {main_output_path}"
+                            })
                         except Exception as save_error:
                             error_msg = f"Ошибка сохранения {save_name}: {str(save_error)}"
                             logger.error(f"    {error_msg}")
@@ -2588,6 +2624,9 @@ async def batch_process_folders(
             
             # Логируем итоговую стоимость
             cost_logger.info(f"=== Итоговая стоимость обработки ===")
+            cost_logger.info(f"Папка: {folder_name}")
+            cost_logger.info(f"Обработано подпапок: {len(subfolders)}")
+            cost_logger.info(f"Обработано файлов: {results['files_processed']}")
             cost_logger.info(f"Background removal (удаление фона): {background_removal_count} изображений × ${COST_BACKGROUND_REMOVAL:.6f} = ${background_removal_count * COST_BACKGROUND_REMOVAL:.2f}")
             cost_logger.info(f"prunaai/p-image-edit (дизайн): {p_image_edit_count} изображений × ${COST_P_IMAGE_EDIT:.2f} = ${p_image_edit_count * COST_P_IMAGE_EDIT:.2f}")
             cost_logger.info(f"ОБЩАЯ СТОИМОСТЬ: ${total_cost:.2f}")
