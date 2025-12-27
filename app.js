@@ -479,7 +479,91 @@ class App {
         document.getElementById('startBatchProcessBtn').addEventListener('click', () => {
             this.startBatchProcessing();
         });
+
+        // Загрузка списка папок при загрузке страницы
+        this.loadBatchFolders();
+
+        // Кнопка обновления списка папок
+        document.getElementById('refreshFoldersBtn').addEventListener('click', () => {
+            this.loadBatchFolders();
+        });
+
+        // Переключение между select и input
+        const batchBasePathSelect = document.getElementById('batchBasePathSelect');
+        const batchBasePathInput = document.getElementById('batchBasePathInput');
+        
+        batchBasePathSelect.addEventListener('change', () => {
+            if (batchBasePathSelect.value === '__manual__') {
+                batchBasePathInput.style.display = 'block';
+                batchBasePathSelect.style.display = 'none';
+            }
+        });
     }
+
+    async loadBatchFolders() {
+        const select = document.getElementById('batchBasePathSelect');
+        const refreshBtn = document.getElementById('refreshFoldersBtn');
+        
+        select.innerHTML = '<option value="">Загрузка папок...</option>';
+        select.disabled = true;
+        refreshBtn.disabled = true;
+
+        try {
+            // Проверяем авторизацию
+            const hasToken = await this.yandexDisk.checkAuth();
+            if (!hasToken) {
+                select.innerHTML = '<option value="">Требуется авторизация в Яндекс Диске</option>';
+                select.disabled = false;
+                refreshBtn.disabled = false;
+                return;
+            }
+
+            // Загружаем папки
+            const folders = await this.yandexDisk.getFolders();
+            
+            select.innerHTML = '';
+            
+            // Добавляем опцию для ручного ввода
+            const manualOption = document.createElement('option');
+            manualOption.value = '__manual__';
+            manualOption.textContent = '📝 Ввести URL/путь вручную';
+            select.appendChild(manualOption);
+            
+            // Добавляем разделитель
+            const separator = document.createElement('option');
+            separator.disabled = true;
+            separator.textContent = '─────────────────';
+            select.appendChild(separator);
+            
+            // Добавляем папки
+            let defaultSelected = false;
+            folders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.path;
+                option.textContent = folder.name;
+                
+                // Устанавливаем "Тест комтех" как выбранный по умолчанию
+                if (folder.name === 'Тест комтех' && !defaultSelected) {
+                    option.selected = true;
+                    defaultSelected = true;
+                }
+                
+                select.appendChild(option);
+            });
+
+            // Если "Тест комтех" не найден, выбираем первую папку
+            if (!defaultSelected && folders.length > 0) {
+                select.selectedIndex = 2; // Пропускаем "вручную" и разделитель
+            }
+
+        } catch (error) {
+            console.error('Error loading folders:', error);
+            select.innerHTML = '<option value="">Ошибка загрузки папок</option>';
+            this.showError('Не удалось загрузить список папок: ' + (error.message || 'Неизвестная ошибка'));
+        } finally {
+            select.disabled = false;
+            refreshBtn.disabled = false;
+        }
 
     async loadYandexFiles() {
         const url = document.getElementById('yandexUrlInput').value.trim();
@@ -1342,11 +1426,24 @@ class App {
     }
 
     async startBatchProcessing() {
-        const basePath = document.getElementById('batchBasePathInput').value.trim() || '/';
+        // Получаем путь из select или input
+        const select = document.getElementById('batchBasePathSelect');
+        const input = document.getElementById('batchBasePathInput');
+        let basePath = '';
+        
+        if (select.value && select.value !== '__manual__') {
+            basePath = select.value;
+        } else if (input.value.trim()) {
+            basePath = input.value.trim();
+        } else {
+            basePath = '/';
+        }
+        
         const model = document.getElementById('batchModelSelect').value;
         const width = parseInt(document.getElementById('batchWidthInput').value) || 1200;
         const height = parseInt(document.getElementById('batchHeightInput').value) || 1200;
-        const outputFolder = document.getElementById('batchOutputFolderInput').value.trim() || 'Обработанные';
+        // outputFolder будет автоматически генерироваться на основе имени папки
+        const outputFolder = document.getElementById('batchOutputFolderInput').value.trim() || '';
 
         // Проверяем авторизацию Yandex Disk
         const hasToken = await this.yandexDisk.checkAuth();

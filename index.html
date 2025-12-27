@@ -168,8 +168,16 @@
                             </div>
                             <div class="config-section" style="margin-bottom: 16px;">
                                 <label class="label">Базовый путь на Яндекс Диске:</label>
-                                <input type="text" id="batchBasePathInput" class="input" placeholder="/" value="https://disk.yandex.ru/d/kXWj5qy7vdZwXA">
-                                <small style="color: var(--text-color); opacity: 0.7; display: block; margin-top: 4px;">URL публичной папки или путь (например: /Тест комтех или https://disk.yandex.ru/d/...)</small>
+                                <div style="display: flex; gap: 8px;">
+                                    <select id="batchBasePathSelect" class="select" style="flex: 1;">
+                                        <option value="">Загрузка папок...</option>
+                                    </select>
+                                    <button type="button" id="refreshFoldersBtn" class="button" style="padding: 8px 16px; white-space: nowrap;" title="Обновить список папок">
+                                        🔄
+                                    </button>
+                                </div>
+                                <input type="text" id="batchBasePathInput" class="input" placeholder="Или введите URL/путь вручную" style="margin-top: 8px; display: none;">
+                                <small style="color: var(--text-color); opacity: 0.7; display: block; margin-top: 4px;">Выберите папку из списка или введите URL/путь вручную</small>
                             </div>
                             <div class="config-section" style="margin-bottom: 16px;">
                                 <label class="label">Модель обработки:</label>
@@ -194,9 +202,10 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="config-section" style="margin-bottom: 16px;">
+                            <div class="config-section" style="margin-bottom: 16px; display: none;">
                                 <label class="label">Папка для результатов:</label>
-                                <input type="text" id="batchOutputFolderInput" class="input" value="Обработанные" placeholder="Обработанные">
+                                <input type="text" id="batchOutputFolderInput" class="input" value="" placeholder="">
+                                <small style="color: var(--text-color); opacity: 0.7; display: block; margin-top: 4px;">Название папки будет автоматически: [Имя_папки]_Обработанный</small>
                             </div>
                             <button id="startBatchProcessBtn" class="btn btn-primary">Начать обработку папок</button>
                             <div id="batchLoadingIndicator" class="loading" style="display: none; margin-top: 16px;">

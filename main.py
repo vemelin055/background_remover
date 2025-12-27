@@ -1692,7 +1692,7 @@ async def batch_process_folders(
     token: Optional[str] = Form(None),
     width: int = Form(1200),
     height: int = Form(1200),
-    output_folder: str = Form("Обработанные")
+    output_folder: str = Form("")  # Будет генерироваться автоматически
 ):
     """
     Batch processing folderów с Yandex Disk.
@@ -1936,14 +1936,25 @@ async def batch_process_folders(
                             logger.warning(f"Folder {folder_name} has only {len(files)} images, expected 5")
                     
                     # Создаем папку для результатов
+                    # Используем имя папки + "_Обработанный"
+                    output_folder_name = f"{folder_name}_Обработанный"
+                    
                     # Для публичных папок сохраняем результаты в корневой папке пользователя
                     if folder.get("public_key"):
                         # Для публичных папок создаем структуру в корневой папке
                         # Используем имя публичной папки как базовую папку
                         base_public_folder_name = "Публичные_обработанные"
-                        output_path = f"/{base_public_folder_name}/{folder_name}/{output_folder}"
+                        output_path = f"/{base_public_folder_name}/{folder_name}/{output_folder_name}"
                     else:
-                        output_path = f"{folder_path}/{output_folder}"
+                        # Для обычных папок создаем рядом с исходной папкой
+                        # Если folder_path это полный путь, берем родительскую папку
+                        if folder_path.startswith('/'):
+                            # Извлекаем родительскую папку
+                            parent_path = '/'.join(folder_path.rstrip('/').split('/')[:-1]) if '/' in folder_path else '/'
+                            output_path = f"{parent_path}/{output_folder_name}" if parent_path != '/' else f"/{output_folder_name}"
+                        else:
+                            # Относительный путь - создаем рядом
+                            output_path = f"{folder_path}_Обработанный"
                     
                     async with httpx.AsyncClient() as client:
                         response = await client.put(
