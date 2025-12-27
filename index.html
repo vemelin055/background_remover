@@ -159,15 +159,17 @@
                         <div class="window-content">
                             <div class="batch-info">
                                 <p style="margin-bottom: 16px; color: var(--text-color); font-size: 14px;">
-                                    Обработка продуктов из папки Яндекс Диска.<br>
-                                    В каждой папке должно быть 5 фотографий продукта.<br>
-                                    Все фотографии обрабатываются через удаление фона.<br>
-                                    Для первой фотографии создается версия с дизайном.
+                                    Обработка папок с Яндекс Диска.<br>
+                                    Система обрабатывает N папок, в каждой папке по 5 фотографий.<br>
+                                    Все фотографии переносятся на белый фон с заданным размером.<br>
+                                    Для первой фотографии создается версия с дизайном.<br>
+                                    Все результаты сохраняются на Яндекс Диск в папку "Обработанные".
                                 </p>
                             </div>
                             <div class="config-section" style="margin-bottom: 16px;">
-                                <label class="label">URL папки:</label>
-                                <input type="text" id="batchYandexUrlInput" class="input" placeholder="https://disk.yandex.ru/client/disk/..." value="https://disk.yandex.ru/client/disk/Тест комтех">
+                                <label class="label">Базовый путь на Яндекс Диске:</label>
+                                <input type="text" id="batchBasePathInput" class="input" placeholder="/" value="/">
+                                <small style="color: var(--text-color); opacity: 0.7; display: block; margin-top: 4px;">Путь к папке с подпапками продуктов (например: /Тест комтех)</small>
                             </div>
                             <div class="config-section" style="margin-bottom: 16px;">
                                 <label class="label">Модель обработки:</label>
@@ -179,7 +181,24 @@
                                     <option value="fal_object_removal">Object Removal FAL AI</option>
                                 </select>
                             </div>
-                            <button id="startBatchProcessBtn" class="btn btn-primary">Начать обработку</button>
+                            <div class="config-section" style="margin-bottom: 16px;">
+                                <label class="label">Размер выходных изображений:</label>
+                                <div style="display: flex; gap: 12px;">
+                                    <div style="flex: 1;">
+                                        <label style="font-size: 12px; display: block; margin-bottom: 4px;">Ширина:</label>
+                                        <input type="number" id="batchWidthInput" class="input" value="1200" min="100" max="5000" step="50">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label style="font-size: 12px; display: block; margin-bottom: 4px;">Высота:</label>
+                                        <input type="number" id="batchHeightInput" class="input" value="1200" min="100" max="5000" step="50">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-section" style="margin-bottom: 16px;">
+                                <label class="label">Папка для результатов:</label>
+                                <input type="text" id="batchOutputFolderInput" class="input" value="Обработанные" placeholder="Обработанные">
+                            </div>
+                            <button id="startBatchProcessBtn" class="btn btn-primary">Начать обработку папок</button>
                             <div id="batchLoadingIndicator" class="loading" style="display: none; margin-top: 16px;">
                                 <div class="spinner"></div>
                                 <p>Обработка...</p>

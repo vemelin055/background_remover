@@ -1342,13 +1342,19 @@ class App {
     }
 
     async startBatchProcessing() {
-        const url = document.getElementById('batchYandexUrlInput').value.trim();
-        if (!url) {
-            this.showError('Введите URL папки Яндекс Диска');
+        const basePath = document.getElementById('batchBasePathInput').value.trim() || '/';
+        const model = document.getElementById('batchModelSelect').value;
+        const width = parseInt(document.getElementById('batchWidthInput').value) || 1200;
+        const height = parseInt(document.getElementById('batchHeightInput').value) || 1200;
+        const outputFolder = document.getElementById('batchOutputFolderInput').value.trim() || 'Обработанные';
+
+        // Проверяем авторизацию Yandex Disk
+        const hasToken = await this.yandexDisk.checkAuth();
+        if (!hasToken) {
+            this.showError('Необходима авторизация в Яндекс Диске. Используйте кнопку авторизации.');
             return;
         }
 
-        const model = document.getElementById('batchModelSelect').value;
         const loadingIndicator = document.getElementById('batchLoadingIndicator');
         const progressContainer = document.getElementById('batchProgressContainer');
         const progressFill = document.getElementById('batchProgressFill');
@@ -1371,16 +1377,25 @@ class App {
                 throw new Error(`API ключ для модели ${model} не найден`);
             }
 
+            // Получаем токен Yandex Disk
+            const token = this.yandexDisk.accessToken || localStorage.getItem('yandex_disk_token');
+
             // Создаем FormData
             const formData = new FormData();
-            formData.append('public_url', url);
+            formData.append('base_path', basePath);
             formData.append('model', model);
+            formData.append('width', width);
+            formData.append('height', height);
+            formData.append('output_folder', outputFolder);
             if (apiKey) {
                 formData.append('apiKey', apiKey);
             }
+            if (token) {
+                formData.append('token', token);
+            }
 
             // Отправляем запрос
-            const response = await fetch('/api/batch-process-products', {
+            const response = await fetch('/api/batch-process-folders', {
                 method: 'POST',
                 body: formData
             });
@@ -1399,36 +1414,37 @@ class App {
             // Показываем результаты
             resultsDiv.style.display = 'block';
             
-            let html = `<p><strong>Обработано продуктов:</strong> ${result.products_processed}</p>`;
-            html += `<p><strong>Обработано файлов:</strong> ${result.total_files_processed}</p>`;
+            let html = `<div style="background: rgba(0,255,0,0.1); padding: 12px; border-radius: 4px; margin-bottom: 16px;">`;
+            html += `<h3 style="margin: 0 0 8px 0; color: var(--text-color);">✓ Обработка завершена!</h3>`;
+            html += `<p style="margin: 4px 0; color: var(--text-color);"><strong>Обработано папок:</strong> ${result.folders_processed}</p>`;
+            html += `<p style="margin: 4px 0; color: var(--text-color);"><strong>Удаление фона:</strong> ${result.total_background_removal} изображений</p>`;
+            html += `<p style="margin: 4px 0; color: var(--text-color);"><strong>Создано дизайнов:</strong> ${result.total_design_created}</p>`;
+            html += `<p style="margin: 4px 0; color: #ffd700; font-size: 18px; font-weight: bold;"><strong>💰 ОБЩАЯ СТОИМОСТЬ: $${result.total_cost.toFixed(2)}</strong></p>`;
+            html += `<p style="margin: 4px 0; color: var(--text-color); font-size: 12px;">Детали: Background removal (${result.cost_breakdown.background_removal.count} × $${result.cost_breakdown.background_removal.cost_per_image}) = $${result.cost_breakdown.background_removal.total.toFixed(2)}</p>`;
+            html += `<p style="margin: 4px 0; color: var(--text-color); font-size: 12px;">prunaai/p-image-edit (${result.cost_breakdown.p_image_edit.count} × $${result.cost_breakdown.p_image_edit.cost_per_image}) = $${result.cost_breakdown.p_image_edit.total.toFixed(2)}</p>`;
+            html += `<p style="margin: 8px 0 0 0; color: var(--text-color); font-size: 11px; opacity: 0.7;">Детальная информация сохранена в файл costs.log</p>`;
+            html += `</div>`;
             html += '<hr style="margin: 16px 0; border-color: var(--border-color);">';
 
-            result.results.forEach((product, idx) => {
+            result.results.forEach((folder, idx) => {
                 html += `<div style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 4px;">`;
-                html += `<h4 style="margin: 0 0 8px 0; color: var(--text-color);">${product.product_name}</h4>`;
-                html += `<p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 12px;">Обработано файлов: ${product.files.length}</p>`;
+                html += `<h4 style="margin: 0 0 8px 0; color: var(--text-color);">${folder.folder_name}</h4>`;
+                html += `<p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 12px;">Обработано файлов: ${folder.files_processed}</p>`;
                 
-                if (product.design_file) {
+                if (folder.design_created) {
                     html += `<p style="margin: 0 0 8px 0; color: var(--primary-color); font-size: 12px;">✓ Создана версия с дизайном</p>`;
                 }
                 
-                html += `<div style="display: flex; gap: 8px; flex-wrap: wrap;">`;
-                product.files.forEach((file, fileIdx) => {
-                    const blob = this.base64ToBlob(file.data, 'image/png');
-                    const url = URL.createObjectURL(blob);
-                    html += `<a href="${url}" download="${file.processed_name}" style="display: inline-block; padding: 4px 8px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">Скачать ${fileIdx + 1}</a>`;
-                });
-                if (product.design_file) {
-                    const designBlob = this.base64ToBlob(product.design_file.data, 'image/png');
-                    const designUrl = URL.createObjectURL(designBlob);
-                    html += `<a href="${designUrl}" download="${product.design_file.name}" style="display: inline-block; padding: 4px 8px; background: #ff6b6b; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">Скачать дизайн</a>`;
+                if (folder.errors && folder.errors.length > 0) {
+                    html += `<p style="margin: 0 0 8px 0; color: #ff6b6b; font-size: 12px;">⚠ Ошибки: ${folder.errors.join(', ')}</p>`;
                 }
-                html += `</div>`;
+                
+                html += `<p style="margin: 0; color: var(--text-color); font-size: 11px; opacity: 0.7;">Файлы сохранены в: ${folder.folder_path}/${outputFolder}</p>`;
                 html += `</div>`;
             });
 
             resultsContent.innerHTML = html;
-            this.showMessage(`Обработка завершена! Обработано ${result.products_processed} продуктов`, 'success');
+            this.showMessage(`Обработка завершена! Обработано ${result.folders_processed} папок. Стоимость: $${result.total_cost.toFixed(2)}`, 'success');
 
         } catch (error) {
             loadingIndicator.style.display = 'none';
