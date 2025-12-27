@@ -71,7 +71,7 @@
                     <h2 class="panel-title">Яндекс Диск</h2>
                     <div class="config-section" style="margin-bottom: 16px;">
                         <label class="label">URL папки:</label>
-                        <input type="text" id="yandexUrlInput" class="input" placeholder="https://disk.yandex.ru/d/-uXMLsCHrFtxzg" value="https://disk.yandex.ru/d/-uXMLsCHrFtxzg">
+                        <input type="text" id="yandexUrlInput" class="input" placeholder="https://disk.yandex.ru/d/-uXMLsCHrFtxzg" value="https://disk.yandex.ru/client/disk/%D0%A2%D0%B5%D1%81%D1%82%20%D0%BA%D0%BE%D0%BC%D1%82%D0%B5%D1%85">
                         <button id="loadYandexFilesBtn" class="btn btn-small">Загрузить файлы</button>
                     </div>
                     <button id="openSidebarBtn" class="btn">Открыть список файлов</button>
@@ -148,6 +148,52 @@
                             <button id="placeOnBackgroundBtn" class="btn btn-primary" style="display: none;">Разместить на фоне</button>
                             <button id="downloadBackgroundBtn" class="btn btn-primary" style="display: none;">Скачать</button>
                             <div id="backgroundImageDimensions" class="image-dimensions" style="display: none;"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Четвертое окно - Batch Processing -->
+                    <div class="window window-batch">
+                        <div class="window-header">
+                            <span class="window-title">ПАКЕТНАЯ ОБРАБОТКА</span>
+                        </div>
+                        <div class="window-content">
+                            <div class="batch-info">
+                                <p style="margin-bottom: 16px; color: var(--text-color); font-size: 14px;">
+                                    Обработка продуктов из папки Яндекс Диска.<br>
+                                    В каждой папке должно быть 5 фотографий продукта.<br>
+                                    Все фотографии обрабатываются через удаление фона.<br>
+                                    Для первой фотографии создается версия с дизайном.
+                                </p>
+                            </div>
+                            <div class="config-section" style="margin-bottom: 16px;">
+                                <label class="label">URL папки:</label>
+                                <input type="text" id="batchYandexUrlInput" class="input" placeholder="https://disk.yandex.ru/client/disk/..." value="https://disk.yandex.ru/client/disk/%D0%A2%D0%B5%D1%81%D1%82%20%D0%BA%D0%BE%D0%BC%D1%82%D0%B5%D1%85">
+                            </div>
+                            <div class="config-section" style="margin-bottom: 16px;">
+                                <label class="label">Модель обработки:</label>
+                                <select id="batchModelSelect" class="select">
+                                    <option value="removebg">Remove.bg</option>
+                                    <option value="clipdrop">Clipdrop</option>
+                                    <option value="replicate" selected>Replicate</option>
+                                    <option value="fal">FAL</option>
+                                    <option value="fal_object_removal">Object Removal FAL AI</option>
+                                </select>
+                            </div>
+                            <button id="startBatchProcessBtn" class="btn btn-primary">Начать обработку</button>
+                            <div id="batchLoadingIndicator" class="loading" style="display: none; margin-top: 16px;">
+                                <div class="spinner"></div>
+                                <p>Обработка...</p>
+                            </div>
+                            <div id="batchProgressContainer" class="progress-container" style="display: none; margin-top: 16px;">
+                                <div class="progress-bar">
+                                    <div id="batchProgressFill" class="progress-fill"></div>
+                                </div>
+                                <div id="batchProgressText" class="progress-text">0 / 0</div>
+                            </div>
+                            <div id="batchResults" style="display: none; margin-top: 16px;">
+                                <h3 style="color: var(--text-color); margin-bottom: 8px;">Результаты:</h3>
+                                <div id="batchResultsContent" style="max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 4px;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

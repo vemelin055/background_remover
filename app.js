@@ -474,6 +474,11 @@ class App {
         document.getElementById('sidebarOverlay').addEventListener('click', () => {
             this.closeSidebar();
         });
+
+        // Batch processing button
+        document.getElementById('startBatchProcessBtn').addEventListener('click', () => {
+            this.startBatchProcessing();
+        });
     }
 
     async loadYandexFiles() {
@@ -1334,6 +1339,112 @@ class App {
             console.error('Ошибка сохранения на Яндекс Диск:', error);
             // Не бросаем ошибку дальше, чтобы не прерывать процесс
         }
+    }
+
+    async startBatchProcessing() {
+        const url = document.getElementById('batchYandexUrlInput').value.trim();
+        if (!url) {
+            this.showError('Введите URL папки Яндекс Диска');
+            return;
+        }
+
+        const model = document.getElementById('batchModelSelect').value;
+        const loadingIndicator = document.getElementById('batchLoadingIndicator');
+        const progressContainer = document.getElementById('batchProgressContainer');
+        const progressFill = document.getElementById('batchProgressFill');
+        const progressText = document.getElementById('batchProgressText');
+        const resultsDiv = document.getElementById('batchResults');
+        const resultsContent = document.getElementById('batchResultsContent');
+        const startBtn = document.getElementById('startBatchProcessBtn');
+
+        // Показываем индикатор загрузки
+        loadingIndicator.style.display = 'block';
+        progressContainer.style.display = 'none';
+        resultsDiv.style.display = 'none';
+        startBtn.disabled = true;
+        resultsContent.innerHTML = '';
+
+        try {
+            // Получаем API ключ
+            const apiKey = this.modelManager.getApiKey(model);
+            if (!apiKey) {
+                throw new Error(`API ключ для модели ${model} не найден`);
+            }
+
+            // Создаем FormData
+            const formData = new FormData();
+            formData.append('public_url', url);
+            formData.append('model', model);
+            if (apiKey) {
+                formData.append('apiKey', apiKey);
+            }
+
+            // Отправляем запрос
+            const response = await fetch('/api/batch-process-products', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Ошибка обработки');
+            }
+
+            const result = await response.json();
+
+            // Скрываем индикатор загрузки
+            loadingIndicator.style.display = 'none';
+            startBtn.disabled = false;
+
+            // Показываем результаты
+            resultsDiv.style.display = 'block';
+            
+            let html = `<p><strong>Обработано продуктов:</strong> ${result.products_processed}</p>`;
+            html += `<p><strong>Обработано файлов:</strong> ${result.total_files_processed}</p>`;
+            html += '<hr style="margin: 16px 0; border-color: var(--border-color);">';
+
+            result.results.forEach((product, idx) => {
+                html += `<div style="margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 4px;">`;
+                html += `<h4 style="margin: 0 0 8px 0; color: var(--text-color);">${product.product_name}</h4>`;
+                html += `<p style="margin: 0 0 8px 0; color: var(--text-color); font-size: 12px;">Обработано файлов: ${product.files.length}</p>`;
+                
+                if (product.design_file) {
+                    html += `<p style="margin: 0 0 8px 0; color: var(--primary-color); font-size: 12px;">✓ Создана версия с дизайном</p>`;
+                }
+                
+                html += `<div style="display: flex; gap: 8px; flex-wrap: wrap;">`;
+                product.files.forEach((file, fileIdx) => {
+                    const blob = this.base64ToBlob(file.data, 'image/png');
+                    const url = URL.createObjectURL(blob);
+                    html += `<a href="${url}" download="${file.processed_name}" style="display: inline-block; padding: 4px 8px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">Скачать ${fileIdx + 1}</a>`;
+                });
+                if (product.design_file) {
+                    const designBlob = this.base64ToBlob(product.design_file.data, 'image/png');
+                    const designUrl = URL.createObjectURL(designBlob);
+                    html += `<a href="${designUrl}" download="${product.design_file.name}" style="display: inline-block; padding: 4px 8px; background: #ff6b6b; color: white; text-decoration: none; border-radius: 4px; font-size: 11px;">Скачать дизайн</a>`;
+                }
+                html += `</div>`;
+                html += `</div>`;
+            });
+
+            resultsContent.innerHTML = html;
+            this.showMessage(`Обработка завершена! Обработано ${result.products_processed} продуктов`, 'success');
+
+        } catch (error) {
+            loadingIndicator.style.display = 'none';
+            startBtn.disabled = false;
+            this.showError('Ошибка пакетной обработки: ' + error.message);
+        }
+    }
+
+    base64ToBlob(base64, mimeType) {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: mimeType });
     }
 
     downloadProcessed() {

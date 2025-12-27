@@ -4,6 +4,7 @@ import asyncio
 import re
 import json
 import logging
+import base64
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -868,13 +869,28 @@ async def get_public_yandex_files(public_url: str = Query(...)):
     
     try:
         # Извлекаем ID папки из URL
-        # Формат: https://disk.yandex.ru/d/-uXMLsCHrFtxzg
-        match = re.search(r'/d/([^/?]+)', public_url)
-        if not match:
-            raise HTTPException(status_code=400, detail="Invalid Yandex Disk URL")
+        # Формат: https://disk.yandex.ru/d/-uXMLsCHrFtxzg или https://disk.yandex.ru/client/disk/...
+        folder_id = None
+        folder_path = None
         
-        folder_id = match.group(1)
-        logger.info(f"Parsing Yandex Disk folder: {folder_id}")
+        # Пробуем формат /d/ID
+        match = re.search(r'/d/([^/?]+)', public_url)
+        if match:
+            folder_id = match.group(1)
+            folder_url = f"https://disk.yandex.ru/d/{folder_id}"
+        else:
+            # Пробуем формат /client/disk/PATH
+            match = re.search(r'/client/disk/([^/?]+)', public_url)
+            if match:
+                folder_path = match.group(1)
+                # Декодируем URL-encoded путь
+                from urllib.parse import unquote
+                folder_path = unquote(folder_path)
+                folder_url = public_url.split('?')[0]  # Используем оригинальный URL
+            else:
+                raise HTTPException(status_code=400, detail="Invalid Yandex Disk URL format. Expected /d/ID or /client/disk/PATH")
+        
+        logger.info(f"Parsing Yandex Disk folder: folder_id={folder_id}, folder_path={folder_path}")
         
         # Парсим публичную страницу
         async with httpx.AsyncClient() as client:
@@ -884,7 +900,7 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                 'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
             }
             response = await client.get(
-                f"https://disk.yandex.ru/d/{folder_id}",
+                folder_url,
                 headers=headers,
                 timeout=30.0,
                 follow_redirects=True
@@ -928,7 +944,12 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                         elif href.startswith('/'):
                             file_url = f"https://disk.yandex.ru{href.split('?')[0]}"
                         else:
-                            file_url = f"https://disk.yandex.ru/d/{folder_id}/{href.split('?')[0]}"
+                            if folder_id:
+                                file_url = f"https://disk.yandex.ru/d/{folder_id}/{href.split('?')[0]}"
+                            else:
+                                # Для формата /client/disk/ используем базовый URL
+                                base_url = folder_url.rsplit('/', 1)[0] if folder_url else "https://disk.yandex.ru"
+                                file_url = f"{base_url}/{href.split('?')[0]}"
                         
                         if file_url not in seen_urls:
                             files.append({
@@ -957,7 +978,11 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                         elif src.startswith('/'):
                             file_url = f"https://disk.yandex.ru{src.split('?')[0]}"
                         else:
-                            file_url = f"https://disk.yandex.ru/d/{folder_id}/{src.split('?')[0]}"
+                            if folder_id:
+                                file_url = f"https://disk.yandex.ru/d/{folder_id}/{src.split('?')[0]}"
+                            else:
+                                base_url = folder_url.rsplit('/', 1)[0] if folder_url else "https://disk.yandex.ru"
+                                file_url = f"{base_url}/{src.split('?')[0]}"
                         
                         if file_url not in seen_urls:
                             files.append({
@@ -1051,7 +1076,14 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                                                     
                                                     if file_url:
                                                         if not file_url.startswith('http'):
-                                                            file_url = f"https://disk.yandex.ru{file_url}" if file_url.startswith('/') else f"https://disk.yandex.ru/d/{folder_id}/{file_url}"
+                                                            if file_url.startswith('/'):
+                                                                file_url = f"https://disk.yandex.ru{file_url}"
+                                                            else:
+                                                                if folder_id:
+                                                                    file_url = f"https://disk.yandex.ru/d/{folder_id}/{file_url}"
+                                                                else:
+                                                                    base_url = folder_url.rsplit('/', 1)[0] if folder_url else "https://disk.yandex.ru"
+                                                                    file_url = f"{base_url}/{file_url}"
                                                         
                                                         file_url = file_url.split('?')[0]
                                                         
@@ -1085,7 +1117,14 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                     name_lower = name.lower()
                     if any(ext in name_lower for ext in image_extensions):
                         if not href.startswith('http'):
-                            href = f"https://disk.yandex.ru{href}" if href.startswith('/') else f"https://disk.yandex.ru/d/{folder_id}/{href}"
+                            if href.startswith('/'):
+                                href = f"https://disk.yandex.ru{href}"
+                            else:
+                                if folder_id:
+                                    href = f"https://disk.yandex.ru/d/{folder_id}/{href}"
+                                else:
+                                    base_url = folder_url.rsplit('/', 1)[0] if folder_url else "https://disk.yandex.ru"
+                                    href = f"{base_url}/{href}"
                         
                         href = href.split('?')[0]
                         
@@ -1118,7 +1157,14 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                         href_lower = href.lower()
                         if any(ext in name_lower for ext in image_extensions) or any(ext in href_lower for ext in image_extensions):
                             if not href.startswith('http'):
-                                href = f"https://disk.yandex.ru{href}" if href.startswith('/') else f"https://disk.yandex.ru/d/{folder_id}/{href}"
+                                if href.startswith('/'):
+                                    href = f"https://disk.yandex.ru{href}"
+                                else:
+                                    if folder_id:
+                                        href = f"https://disk.yandex.ru/d/{folder_id}/{href}"
+                                    else:
+                                        base_url = folder_url.rsplit('/', 1)[0] if folder_url else "https://disk.yandex.ru"
+                                        href = f"{base_url}/{href}"
                             
                             href = href.split('?')[0]
                             
@@ -1141,7 +1187,7 @@ async def get_public_yandex_files(public_url: str = Query(...)):
                 # with open(f"debug_{folder_id}.html", "w", encoding="utf-8") as f:
                 #     f.write(html)
             
-            return {"files": files, "folder_id": folder_id, "total_found": len(files)}
+            return {"files": files, "folder_id": folder_id, "folder_path": folder_path, "total_found": len(files)}
             
     except HTTPException:
         raise
@@ -1428,6 +1474,192 @@ async def create_yandex_folder(path: str, token: Optional[str] = Form(None)):
             raise HTTPException(status_code=response.status_code, detail="Failed to create folder")
         
         return {"success": True, "path": path}
+
+@app.post("/api/batch-process-products")
+async def batch_process_products(
+    public_url: str = Form(...),
+    model: str = Form("replicate"),
+    apiKey: Optional[str] = Form(None),
+    token: Optional[str] = Form(None)
+):
+    """
+    Batch processing продуктов из папки Яндекс Диска.
+    Ожидается структура: папки с продуктами, в каждой папке 5 фотографий.
+    Все фотографии обрабатываются через удаление фона.
+    Для первой фотографии каждого продукта создается версия с дизайном.
+    """
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Получаем список файлов из папки
+        files_response = await get_public_yandex_files(public_url=public_url)
+        files = files_response.get("files", [])
+        
+        if not files:
+            raise HTTPException(status_code=404, detail="No files found in folder")
+        
+        # Группируем файлы по продуктам
+        # Предполагаем, что файлы организованы в папки или имеют паттерн именования
+        # Для простоты, группируем по первым символам имени (до первого числа или разделителя)
+        products = {}
+        for file in files:
+            name = file.get("name", "")
+            # Извлекаем имя продукта (до первого числа, подчеркивания или дефиса)
+            product_match = re.match(r'^([^0-9_\-]+)', name)
+            if product_match:
+                product_name = product_match.group(1).strip()
+            else:
+                # Если паттерн не найден, используем имя файла без расширения
+                product_name = name.rsplit('.', 1)[0]
+            
+            if product_name not in products:
+                products[product_name] = []
+            products[product_name].append(file)
+        
+        logger.info(f"Found {len(products)} products, total files: {len(files)}")
+        
+        # Получаем API ключ
+        api_key = get_api_key(model, apiKey)
+        if not api_key:
+            raise HTTPException(status_code=400, detail="API key not provided")
+        
+        results = []
+        processed_count = 0
+        total_count = len(files)
+        
+        # Обрабатываем каждый продукт
+        for product_name, product_files in products.items():
+            # Сортируем файлы по имени для консистентности
+            product_files.sort(key=lambda x: x.get("name", ""))
+            
+            product_results = {
+                "product_name": product_name,
+                "files": [],
+                "design_file": None
+            }
+            
+            # Обрабатываем каждое фото продукта
+            for idx, file_info in enumerate(product_files):
+                try:
+                    # Скачиваем файл
+                    file_url = file_info.get("url") or file_info.get("path")
+                    async with httpx.AsyncClient() as client:
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Referer': 'https://disk.yandex.ru/'
+                        }
+                        file_response = await client.get(file_url, headers=headers, timeout=60.0, follow_redirects=True)
+                        if file_response.status_code != 200:
+                            logger.warning(f"Failed to download {file_info.get('name')}: {file_response.status_code}")
+                            continue
+                        image_bytes = file_response.content
+                    
+                    # Обрабатываем через удаление фона
+                    processed_bytes = await MODELS[model](image_bytes, api_key, None)
+                    
+                    processed_count += 1
+                    
+                    # Для первой фотографии создаем версию с дизайном
+                    if idx == 0:
+                        try:
+                            # Используем внутренний вызов place_on_background
+                            processed_file_obj = io.BytesIO(processed_bytes)
+                            processed_file_obj.name = "processed.png"
+                            
+                            # Получаем путь к фону
+                            background_paths = [
+                                "/app/background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpeg",
+                                os.path.expanduser("~/background_remover/background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpeg"),
+                                "./background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpeg",
+                                "background/ФМГ_Авито_Универсальная_Обложка_Без_Товара.jpeg"
+                            ]
+                            
+                            background_path = None
+                            for path in background_paths:
+                                if os.path.exists(path):
+                                    background_path = path
+                                    break
+                            
+                            if background_path:
+                                with open(background_path, 'rb') as f:
+                                    background_bytes = f.read()
+                                
+                                background_file_obj = io.BytesIO(background_bytes)
+                                background_file_obj.name = "background.jpeg"
+                                
+                                # Используем replicate для размещения на фоне
+                                os.environ["REPLICATE_API_TOKEN"] = api_key
+                                
+                                default_prompt = """Add the product from @img2 to the image @img1. The product must levitate directly above the podium, barely touching the podium surface, with a visible contact shadow."""
+                                
+                                processed_file_obj.seek(0)
+                                background_file_obj.seek(0)
+                                
+                                model_input = {
+                                    "images": [background_file_obj, processed_file_obj],
+                                    "prompt": default_prompt,
+                                    "aspect_ratio": "4:3"
+                                }
+                                
+                                design_output = await asyncio.to_thread(
+                                    replicate.run,
+                                    "prunaai/p-image-edit",
+                                    input=model_input
+                                )
+                                
+                                design_bytes = None
+                                if hasattr(design_output, 'read'):
+                                    design_bytes = design_output.read()
+                                elif isinstance(design_output, str):
+                                    async with httpx.AsyncClient() as http_client:
+                                        response = await http_client.get(design_output, timeout=60.0)
+                                        if response.status_code == 200:
+                                            design_bytes = response.content
+                                elif isinstance(design_output, list) and len(design_output) > 0:
+                                    first_item = design_output[0]
+                                    if hasattr(first_item, 'read'):
+                                        design_bytes = first_item.read()
+                                    elif isinstance(first_item, str):
+                                        async with httpx.AsyncClient() as http_client:
+                                            response = await http_client.get(first_item, timeout=60.0)
+                                            if response.status_code == 200:
+                                                design_bytes = response.content
+                                
+                                if design_bytes:
+                                    product_results["design_file"] = {
+                                        "name": f"{product_name}_design.png",
+                                        "data": base64.b64encode(design_bytes).decode('utf-8'),
+                                        "size": len(design_bytes)
+                                    }
+                        except Exception as e:
+                            logger.warning(f"Failed to create design version for {product_name}: {str(e)}")
+                    
+                    # Сохраняем обработанное изображение
+                    product_results["files"].append({
+                        "name": file_info.get("name", ""),
+                        "processed_name": f"{product_name}_{idx + 1}_processed.png",
+                        "data": base64.b64encode(processed_bytes).decode('utf-8'),
+                        "size": len(processed_bytes)
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error processing {file_info.get('name')}: {str(e)}")
+                    continue
+            
+            results.append(product_results)
+        
+        return {
+            "success": True,
+            "products_processed": len(results),
+            "total_files_processed": processed_count,
+            "results": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in batch processing: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Batch processing error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

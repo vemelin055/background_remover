@@ -94,3 +94,4 @@ if __name__ == "__main__":
         print("❌ TEST NIE POWIODŁ SIĘ")
         sys.exit(1)
 
+
