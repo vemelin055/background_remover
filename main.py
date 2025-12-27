@@ -138,6 +138,12 @@ async def process_replicate(image_bytes: bytes, api_key: str, prompt: Optional[s
     last_error = None
     for idx, model_info in enumerate(models):
         try:
+            # Добавляем задержку между запросами для избежания rate limiting (6 запросов в минуту)
+            if idx > 0:
+                delay_seconds = 11  # 11 секунд между запросами = ~5 запросов в минуту (безопасный лимит)
+                logging.info(f"Waiting {delay_seconds} seconds before trying next model to avoid rate limiting...")
+                await asyncio.sleep(delay_seconds)
+            
             logging.info(f"Trying Replicate model {idx + 1}/{len(models)}: {model_info['name']}")
             
             # Создаем новый BytesIO для каждой попытки (так как он может быть использован)
@@ -230,6 +236,16 @@ async def process_replicate(image_bytes: bytes, api_key: str, prompt: Optional[s
             # HTTPException пробрасываем дальше без fallback
             raise
         except Exception as e:
+            # Проверяем, является ли это ошибкой rate limiting (429)
+            error_str = str(e)
+            is_rate_limit = "429" in error_str or "rate limit" in error_str.lower() or "throttled" in error_str.lower()
+            
+            if is_rate_limit and idx < len(models) - 1:
+                # Если это rate limit и есть еще модели, ждем дольше перед следующей попыткой
+                wait_time = 15  # 15 секунд для rate limit
+                logging.warning(f"Rate limit detected for model {model_info['name']}. Waiting {wait_time} seconds before trying next model...")
+                await asyncio.sleep(wait_time)
+            
             # Сохраняем ошибку и пробуем следующий модель
             last_error = e
             logging.warning(f"Replicate model {model_info['name']} failed: {str(e)}, trying next model...")
@@ -1900,6 +1916,8 @@ async def batch_process_folders(
         
         # Создаем async generator для streaming response
         async def generate_progress():
+            nonlocal background_removal_count, p_image_edit_count
+            
             results = {
                 "folder_name": folder_name,
                 "folder_path": folder_path,
@@ -2084,6 +2102,11 @@ async def batch_process_folders(
                                     "step": "background_removal",
                                     "message": f"Удаление фона: {file_name}"
                                 })
+                                
+                                # Добавляем задержку между запросами для избежания rate limiting (6 запросов в минуту)
+                                if file_idx > 0:
+                                    delay_seconds = 11  # 11 секунд между запросами = ~5 запросов в минуту
+                                    await asyncio.sleep(delay_seconds)
                                 
                                 processed_bytes = await MODELS[model](image_bytes, api_key, None)
                                 background_removal_count += 1
@@ -2398,6 +2421,11 @@ async def batch_process_folders(
                             "step": "background_removal",
                             "message": f"Удаление фона: {file_name}"
                         })
+                        
+                        # Добавляем задержку между запросами для избежания rate limiting (6 запросов в минуту)
+                        if file_idx > 0:
+                            delay_seconds = 11  # 11 секунд между запросами = ~5 запросов в минуту
+                            await asyncio.sleep(delay_seconds)
                         
                         processed_bytes = await MODELS[model](image_bytes, api_key, None)
                         background_removal_count += 1
