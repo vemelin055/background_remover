@@ -1745,16 +1745,48 @@ async def batch_process_folders(
                     detail=f"API key not provided for model {model}. Please set it in Railway variables or provide it in the request."
                 )
         
+        # Проверяем, является ли base_path URL или путем
+        # Если это URL, используем API для публичных папок
+        use_public_api = False
+        public_key = None
+        actual_path = base_path
+        
+        if base_path.startswith("http"):
+            # Это публичный URL, нужно извлечь ID
+            logger.info(f"Detected public URL, extracting folder ID: {base_path}")
+            
+            # Извлекаем ID из URL формата https://disk.yandex.ru/d/ID
+            match = re.search(r'/d/([^/?]+)', base_path)
+            if match:
+                public_key = match.group(1)
+                use_public_api = True
+                logger.info(f"Extracted public folder ID: {public_key}")
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Неверный формат URL. Ожидается формат: https://disk.yandex.ru/d/ID"
+                )
+        
         # Получаем список папок
-        logger.info(f"Fetching folders from Yandex Disk, path: {base_path}")
+        logger.info(f"Fetching folders from Yandex Disk, path: {actual_path}, use_public_api: {use_public_api}")
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(
-                    "https://cloud-api.yandex.net/v1/disk/resources",
-                    params={"path": base_path, "limit": 1000},
-                    headers={"Authorization": f"OAuth {token}"},
-                    timeout=30.0
-                )
+                if use_public_api:
+                    # Используем API для публичных папок
+                    response = await client.get(
+                        "https://cloud-api.yandex.net/v1/disk/public/resources",
+                        params={"public_key": public_key, "limit": 1000},
+                        headers={"Authorization": f"OAuth {token}"},
+                        timeout=30.0
+                    )
+                else:
+                    # Используем обычный API для приватных папок
+                    response = await client.get(
+                        "https://cloud-api.yandex.net/v1/disk/resources",
+                        params={"path": actual_path, "limit": 1000},
+                        headers={"Authorization": f"OAuth {token}"},
+                        timeout=30.0
+                    )
                 
                 logger.info(f"Yandex Disk API response status: {response.status_code}")
                 
@@ -1802,11 +1834,29 @@ async def batch_process_folders(
                 raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
             
             data = response.json()
-            folders = [
-                {"name": item["name"], "path": item["path"]}
-                for item in data.get("_embedded", {}).get("items", [])
-                if item.get("type") == "dir"
-            ]
+            
+            # Для публичных папок структура может быть немного другой
+            items = data.get("_embedded", {}).get("items", [])
+            if not items and use_public_api:
+                # Пробуем альтернативную структуру для публичных папок
+                items = data.get("items", [])
+            
+            folders = []
+            for item in items:
+                if item.get("type") == "dir":
+                    folder_name = item.get("name", "")
+                    # Для публичных папок сохраняем public_key для доступа к подпапкам
+                    if use_public_api:
+                        # Для подпапок в публичной папке используем тот же public_key
+                        folder_path = folder_name  # Относительный путь
+                    else:
+                        folder_path = item.get("path", "")
+                    
+                    folders.append({
+                        "name": folder_name, 
+                        "path": folder_path, 
+                        "public_key": public_key if use_public_api else None
+                    })
         
         logger.info(f"Found {len(folders)} folders to process")
         cost_logger.info(f"=== Начало обработки {len(folders)} папок ===")
@@ -1842,21 +1892,39 @@ async def batch_process_folders(
                 
                 try:
                     # Получаем файлы из папки
+                    folder_public_key = folder.get("public_key")
+                    is_public_subfolder = folder_public_key is not None
+                    
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(
-                            "https://cloud-api.yandex.net/v1/disk/resources",
-                            params={"path": folder_path, "limit": 1000},
-                            headers={"Authorization": f"OAuth {token}"},
-                            timeout=30.0
-                        )
+                        if is_public_subfolder:
+                            # Используем API для публичных папок
+                            response = await client.get(
+                                "https://cloud-api.yandex.net/v1/disk/public/resources",
+                                params={"public_key": folder_public_key, "path": folder_path, "limit": 1000},
+                                headers={"Authorization": f"OAuth {token}"},
+                                timeout=30.0
+                            )
+                        else:
+                            # Используем обычный API
+                            response = await client.get(
+                                "https://cloud-api.yandex.net/v1/disk/resources",
+                                params={"path": folder_path, "limit": 1000},
+                                headers={"Authorization": f"OAuth {token}"},
+                                timeout=30.0
+                            )
                         
                         if response.status_code != 200:
                             logger.warning(f"Failed to fetch files from folder {folder_name}: {response.status_code}")
                             continue
                         
                         data = response.json()
+                        # Для публичных папок структура может быть немного другой
+                        items = data.get("_embedded", {}).get("items", [])
+                        if not items and is_public_subfolder:
+                            items = data.get("items", [])
+                        
                         files = [
-                            item for item in data.get("_embedded", {}).get("items", [])
+                            item for item in items
                             if item.get("type") == "file" and item.get("mime_type", "").startswith("image/")
                         ]
                         
@@ -1868,7 +1936,15 @@ async def batch_process_folders(
                             logger.warning(f"Folder {folder_name} has only {len(files)} images, expected 5")
                     
                     # Создаем папку для результатов
-                    output_path = f"{folder_path}/{output_folder}"
+                    # Для публичных папок сохраняем результаты в корневой папке пользователя
+                    if folder.get("public_key"):
+                        # Для публичных папок создаем структуру в корневой папке
+                        # Используем имя публичной папки как базовую папку
+                        base_public_folder_name = "Публичные_обработанные"
+                        output_path = f"/{base_public_folder_name}/{folder_name}/{output_folder}"
+                    else:
+                        output_path = f"{folder_path}/{output_folder}"
+                    
                     async with httpx.AsyncClient() as client:
                         response = await client.put(
                             "https://cloud-api.yandex.net/v1/disk/resources",
@@ -1906,13 +1982,28 @@ async def batch_process_folders(
                             })
                             
                             # Скачиваем файл
+                            file_is_public = folder.get("public_key") is not None
+                            
                             async with httpx.AsyncClient() as client:
-                                link_response = await client.get(
-                                    "https://cloud-api.yandex.net/v1/disk/resources/download",
-                                    params={"path": file_path},
-                                    headers={"Authorization": f"OAuth {token}"},
-                                    timeout=30.0
-                                )
+                                if file_is_public:
+                                    # Для публичных файлов используем другой endpoint
+                                    # file_path для публичных файлов может быть относительным путем
+                                    # Нужно использовать полный путь: folder_path/file_name
+                                    public_file_path = f"{folder_path}/{file_name}" if folder_path else file_name
+                                    link_response = await client.get(
+                                        "https://cloud-api.yandex.net/v1/disk/public/resources/download",
+                                        params={"public_key": folder.get("public_key"), "path": public_file_path},
+                                        headers={"Authorization": f"OAuth {token}"},
+                                        timeout=30.0
+                                    )
+                                else:
+                                    # Для приватных файлов используем обычный endpoint
+                                    link_response = await client.get(
+                                        "https://cloud-api.yandex.net/v1/disk/resources/download",
+                                        params={"path": file_path},
+                                        headers={"Authorization": f"OAuth {token}"},
+                                        timeout=30.0
+                                    )
                                 
                                 if link_response.status_code != 200:
                                     raise Exception(f"Failed to get download link: {link_response.status_code}")
