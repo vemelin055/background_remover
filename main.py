@@ -863,8 +863,8 @@ async def get_env_token():
     return {"has_token": False, "valid": False}
 
 @app.get("/api/yandex/folders")
-async def get_yandex_folders(token: Optional[str] = None, recursive: bool = Query(True)):
-    """Получение списка папок Яндекс Диска (рекурсивно все подпапки)"""
+async def get_yandex_folders(token: Optional[str] = None, recursive: bool = Query(False)):
+    """Получение списка папок Яндекс Диска (только первый уровень по умолчанию)"""
     # Если токен не передан, пробуем использовать токен из .env
     if not token:
         token = os.getenv("YANDEX_DISK_TOKEN")
@@ -872,53 +872,55 @@ async def get_yandex_folders(token: Optional[str] = None, recursive: bool = Quer
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    async def get_folders_recursive(path: str, depth: int = 0, max_depth: int = 10) -> list:
-        """Рекурсивно получает все папки"""
-        if depth > max_depth:
-            return []
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://cloud-api.yandex.net/v1/disk/resources",
+            params={"path": "/", "limit": 1000},
+            headers={"Authorization": f"OAuth {token}"},
+            timeout=30.0
+        )
         
-        folders = []
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    "https://cloud-api.yandex.net/v1/disk/resources",
-                    params={"path": path, "limit": 1000},
-                    headers={"Authorization": f"OAuth {token}"},
-                    timeout=30.0
-                )
-                
-                if response.status_code != 200:
-                    return []
-                
-                data = response.json()
-                items = data.get("_embedded", {}).get("items", [])
-                
-                for item in items:
-                    if item.get("type") == "dir":
-                        folder_path = item.get("path", "")
-                        folder_name = item.get("name", "")
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch folders")
+        
+        data = response.json()
+        folders = [
+            {"name": item["name"], "path": item["path"], "depth": 0}
+            for item in data.get("_embedded", {}).get("items", [])
+            if item.get("type") == "dir"
+        ]
+        
+        # Если recursive=True, загружаем подпапки первого уровня
+        if recursive:
+            all_folders = folders.copy()
+            for folder in folders:
+                try:
+                    sub_response = await client.get(
+                        "https://cloud-api.yandex.net/v1/disk/resources",
+                        params={"path": folder["path"], "limit": 1000},
+                        headers={"Authorization": f"OAuth {token}"},
+                        timeout=30.0
+                    )
+                    
+                    if sub_response.status_code == 200:
+                        sub_data = sub_response.json()
+                        sub_items = sub_data.get("_embedded", {}).get("items", [])
                         
-                        # Добавляем текущую папку
-                        folders.append({
-                            "name": folder_name,
-                            "path": folder_path,
-                            "depth": depth
-                        })
-                        
-                        # Рекурсивно получаем подпапки
-                        if recursive:
-                            subfolders = await get_folders_recursive(folder_path, depth + 1, max_depth)
-                            folders.extend(subfolders)
+                        for item in sub_items:
+                            if item.get("type") == "dir":
+                                all_folders.append({
+                                    "name": item["name"],
+                                    "path": item["path"],
+                                    "depth": 1
+                                })
+                except Exception as e:
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error fetching subfolders from {folder['path']}: {str(e)}")
+                    continue
+            
+            return {"folders": all_folders}
         
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Error fetching folders from {path}: {str(e)}")
-        
-        return folders
-    
-    all_folders = await get_folders_recursive("/")
-    
-    return {"folders": all_folders}
+        return {"folders": folders}
 
 @app.get("/api/yandex/public-files")
 async def get_public_yandex_files(public_url: str = Query(...)):

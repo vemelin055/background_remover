@@ -639,8 +639,7 @@ class App {
             // Обновляем счетчик папок
             const foldersCount = document.getElementById('foldersCount');
             if (foldersCount) {
-                const rootFolders = sortedFolders.filter(f => (f.depth || 0) === 0).length;
-                foldersCount.textContent = `Найдено ${sortedFolders.length} папок (${rootFolders} корневых + подпапки). Выберите папку из списка`;
+                foldersCount.textContent = `Найдено ${sortedFolders.length} папок. Выберите папку из списка`;
             }
             
             console.log(`Загружено ${sortedFolders.length} папок из Yandex Disk`);
