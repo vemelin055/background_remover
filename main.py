@@ -2087,43 +2087,65 @@ async def batch_process_folders(
                 "errors": []
             }
             
-            # Подсчитываем общее количество файлов (включая файлы из подпапок)
-            total_files_count = len(files)
-            if subfolders:
-                async with httpx.AsyncClient() as count_client:
-                    for subfolder in subfolders:
-                        subfolder_path = subfolder.get("path", "")
-                        subfolder_name = subfolder.get("name", "")
+            # Рекурсивная функция для подсчета всех файлов
+            async def count_files_recursive(path: str, depth: int = 0, max_depth: int = 10) -> int:
+                """Рекурсивно подсчитывает все изображения в папке и подпапках"""
+                if depth > max_depth:
+                    return 0
+                
+                count = 0
+                try:
+                    async with httpx.AsyncClient() as client:
+                        if use_public_api:
+                            response = await client.get(
+                                "https://cloud-api.yandex.net/v1/disk/public/resources",
+                                params={"public_key": public_key, "path": path, "limit": 1000},
+                                headers={"Authorization": f"OAuth {token}"},
+                                timeout=30.0
+                            )
+                        else:
+                            response = await client.get(
+                                "https://cloud-api.yandex.net/v1/disk/resources",
+                                params={"path": path, "limit": 1000},
+                                headers={"Authorization": f"OAuth {token}"},
+                                timeout=30.0
+                            )
                         
-                        try:
-                            if use_public_api:
-                                subfolder_response = await count_client.get(
-                                    "https://cloud-api.yandex.net/v1/disk/public/resources",
-                                    params={"public_key": public_key, "path": f"{folder_path}/{subfolder_name}", "limit": 1000},
-                                    headers={"Authorization": f"OAuth {token}"},
-                                    timeout=30.0
-                                )
-                            else:
-                                subfolder_response = await count_client.get(
-                                    "https://cloud-api.yandex.net/v1/disk/resources",
-                                    params={"path": subfolder_path, "limit": 1000},
-                                    headers={"Authorization": f"OAuth {token}"},
-                                    timeout=30.0
-                                )
-                            
-                            if subfolder_response.status_code == 200:
-                                subfolder_data = subfolder_response.json()
-                                subfolder_items = subfolder_data.get("_embedded", {}).get("items", [])
-                                if not subfolder_items and use_public_api:
-                                    subfolder_items = subfolder_data.get("items", [])
-                                
-                                subfolder_files = [
-                                    item for item in subfolder_items
-                                    if item.get("type") == "file" and item.get("mime_type", "").startswith("image/")
-                                ]
-                                total_files_count += len(subfolder_files)
-                        except:
-                            pass  # Игнорируем ошибки при подсчете
+                        if response.status_code != 200:
+                            return 0
+                        
+                        data = response.json()
+                        items = data.get("_embedded", {}).get("items", [])
+                        if not items and use_public_api:
+                            items = data.get("items", [])
+                        
+                        # Считаем файлы в текущей папке
+                        current_files = [
+                            item for item in items
+                            if item.get("type") == "file" and item.get("mime_type", "").startswith("image/")
+                        ]
+                        count += len(current_files)
+                        
+                        # Рекурсивно считаем файлы в подпапках (кроме "Обработанный")
+                        subfolders = [
+                            item for item in items
+                            if item.get("type") == "dir" and item.get("name") != "Обработанный"
+                        ]
+                        
+                        for subfolder in subfolders:
+                            subfolder_path = subfolder.get("path", "")
+                            count += await count_files_recursive(subfolder_path, depth + 1, max_depth)
+                
+                except:
+                    pass  # Игнорируем ошибки при подсчете
+                
+                return count
+            
+            # Подсчитываем общее количество файлов рекурсивно
+            total_files_count = len(files)
+            for subfolder in subfolders:
+                subfolder_path = subfolder.get("path", "")
+                total_files_count += await count_files_recursive(subfolder_path, depth=0, max_depth=10)
             
             # Отправляем начальное сообщение
             yield await send_progress_update({
@@ -2141,245 +2163,241 @@ async def batch_process_folders(
                 })
                 return
             
-            # Обрабатываем подпапки
-            for subfolder_idx, subfolder in enumerate(subfolders, 1):
-                subfolder_name = subfolder.get("name", "")
-                subfolder_path = subfolder.get("path", "")
+            # Рекурсивная функция для обработки папки и всех её подпапок
+            async def process_folder_recursive(current_path: str, current_name: str, depth: int = 0, max_depth: int = 10, is_first_in_folder: bool = True):
+                """Рекурсивно обрабатывает папку и все её подпапки"""
+                if depth > max_depth:
+                    return
                 
-                yield await send_progress_update({
-                    "type": "folder_start",
-                    "folder_index": subfolder_idx,
-                    "total_folders": len(subfolders),
-                    "folder_name": subfolder_name,
-                    "message": f"Обработка подпапки {subfolder_idx}/{len(subfolders)}: {subfolder_name}"
-                })
+                # Пропускаем папку "Обработанный"
+                if current_name == "Обработанный":
+                    return
                 
                 try:
-                    # Получаем файлы из подпапки
+                    # Получаем содержимое текущей папки
                     async with httpx.AsyncClient() as client:
                         if use_public_api:
-                            subfolder_response = await client.get(
+                            response = await client.get(
                                 "https://cloud-api.yandex.net/v1/disk/public/resources",
-                                params={"public_key": public_key, "path": f"{folder_path}/{subfolder_name}", "limit": 1000},
+                                params={"public_key": public_key, "path": current_path, "limit": 1000},
                                 headers={"Authorization": f"OAuth {token}"},
                                 timeout=30.0
                             )
                         else:
-                            subfolder_response = await client.get(
+                            response = await client.get(
                                 "https://cloud-api.yandex.net/v1/disk/resources",
-                                params={"path": subfolder_path, "limit": 1000},
+                                params={"path": current_path, "limit": 1000},
                                 headers={"Authorization": f"OAuth {token}"},
                                 timeout=30.0
                             )
                         
-                        if subfolder_response.status_code != 200:
-                            logger.warning(f"Failed to fetch files from subfolder {subfolder_name}: {subfolder_response.status_code}")
-                            continue
+                        if response.status_code != 200:
+                            logger.warning(f"Failed to fetch from {current_path}: {response.status_code}")
+                            return
                         
-                        subfolder_data = subfolder_response.json()
-                        subfolder_items = subfolder_data.get("_embedded", {}).get("items", [])
-                        if not subfolder_items and use_public_api:
-                            subfolder_items = subfolder_data.get("items", [])
+                        data = response.json()
+                        items = data.get("_embedded", {}).get("items", [])
+                        if not items and use_public_api:
+                            items = data.get("items", [])
                         
-                        subfolder_files = [
-                            item for item in subfolder_items
+                        # Разделяем на файлы и подпапки
+                        current_files = [
+                            item for item in items
                             if item.get("type") == "file" and item.get("mime_type", "").startswith("image/")
                         ]
+                        current_subfolders = [
+                            item for item in items
+                            if item.get("type") == "dir" and item.get("name") != "Обработанный"
+                        ]
                         
-                        subfolder_files.sort(key=lambda x: x.get("name", ""))
+                        current_files.sort(key=lambda x: x.get("name", ""))
+                        current_subfolders.sort(key=lambda x: x.get("name", ""))
                         
-                        if not subfolder_files:
-                            logger.info(f"  Subfolder {subfolder_name} has no image files")
-                            continue
-                        
-                        # Создаем папку для результатов этой подпапки внутри самой подпапки
-                        # Используем путь к подпапке + "Обработанный"
-                        if use_public_api:
-                            subfolder_full_path = f"{folder_path}/{subfolder_name}" if folder_path else subfolder_name
-                        else:
-                            subfolder_full_path = subfolder_path
-                        
-                        subfolder_output_path = f"{subfolder_full_path}/Обработанный"
-                        
-                        async with httpx.AsyncClient() as create_client:
-                            create_response = await create_client.put(
-                                "https://cloud-api.yandex.net/v1/disk/resources",
-                                params={"path": subfolder_output_path},
-                                headers={"Authorization": f"OAuth {token}"},
-                                timeout=30.0
-                            )
-                        
-                        # Обрабатываем файлы из подпапки (используем ту же логику что и для файлов в главной папке)
-                        for file_idx, file_info in enumerate(subfolder_files):
-                            try:
-                                file_name = file_info.get("name", "")
-                                file_path = file_info.get("path", "")
-                                
-                                logger.info(f"  Processing file {file_idx + 1}/{len(subfolder_files)} from subfolder {subfolder_name}: {file_name}")
-                                
-                                # Отправляем информацию о начале обработки файла
-                                yield await send_progress_update({
-                                    "type": "file_start",
-                                    "folder_name": subfolder_name,
-                                    "file_index": file_idx + 1,
-                                    "total_files": len(subfolder_files),
-                                    "file_name": file_name,
-                                    "message": f"Обработка файла {file_idx + 1}/{len(subfolder_files)} из '{subfolder_name}': {file_name}"
-                                })
-                                
-                                # Скачиваем файл
-                                file_is_public = use_public_api
-                                
-                                async with httpx.AsyncClient() as download_client:
-                                    if file_is_public:
-                                        # Для публичных файлов используем другой endpoint
-                                        public_file_path = f"{folder_path}/{subfolder_name}/{file_name}" if folder_path else f"{subfolder_name}/{file_name}"
-                                        link_response = await download_client.get(
-                                            "https://cloud-api.yandex.net/v1/disk/public/resources/download",
-                                            params={"public_key": public_key, "path": public_file_path},
-                                            headers={"Authorization": f"OAuth {token}"},
-                                            timeout=30.0
-                                        )
-                                    else:
-                                        # Для приватных файлов используем обычный endpoint
-                                        link_response = await download_client.get(
-                                            "https://cloud-api.yandex.net/v1/disk/resources/download",
-                                            params={"path": file_path},
-                                            headers={"Authorization": f"OAuth {token}"},
-                                            timeout=30.0
-                                        )
-                                    
-                                    if link_response.status_code != 200:
-                                        raise Exception(f"Failed to get download link: {link_response.status_code}")
-                                    
-                                    download_url = link_response.json()["href"]
-                                    file_response = await download_client.get(download_url, timeout=60.0, follow_redirects=True)
-                                    
-                                    if file_response.status_code != 200:
-                                        raise Exception(f"Failed to download file: {file_response.status_code}")
-                                    
-                                    image_bytes = file_response.content
-                                
-                                # Обрабатываем через удаление фона
-                                yield await send_progress_update({
-                                    "type": "processing",
-                                    "folder_name": subfolder_name,
-                                    "file_name": file_name,
-                                    "step": "background_removal",
-                                    "message": f"Удаление фона: {file_name}"
-                                })
-                                
-                                # Добавляем задержку между запросами для избежания rate limiting (6 запросов в минуту)
-                                if file_idx > 0:
-                                    delay_seconds = 11  # 11 секунд между запросами = ~5 запросов в минуту
-                                    await asyncio.sleep(delay_seconds)
-                                
-                                processed_bytes = await MODELS[model](image_bytes, api_key, None)
-                                background_removal_count += 1
-                                
-                                # Размещаем на белом фоне с заданным размером
-                                processed_img = Image.open(io.BytesIO(processed_bytes))
-                                template_width = max(100, min(5000, width))
-                                template_height = max(100, min(5000, height))
-                                template_img = Image.new("RGB", (template_width, template_height), "white")
-                                
-                                img_width, img_height = processed_img.size
-                                scale_width = template_width / img_width
-                                scale_height = template_height / img_height
-                                scale = min(scale_width, scale_height)
-                                
-                                new_width = int(img_width * scale)
-                                new_height = int(img_height * scale)
-                                processed_img = processed_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                                
-                                x = (template_width - new_width) // 2
-                                y = (template_height - new_height) // 2
-                                
-                                result = template_img.copy()
-                                if processed_img.mode == "RGBA":
-                                    result.paste(processed_img, (x, y), processed_img)
-                                else:
-                                    result.paste(processed_img, (x, y))
-                                
-                                # Сохраняем в bytes
-                                output = io.BytesIO()
-                                result.save(output, format="PNG")
-                                output.seek(0)
-                                white_bg_bytes = output.read()
-                                
-                                # Сохраняем на Yandex Disk
-                                save_name = f"{file_name.rsplit('.', 1)[0]}_processed.png"
-                                save_path = f"{subfolder_output_path}/{save_name}"
-                                
-                                yield await send_progress_update({
-                                    "type": "saving",
-                                    "folder_name": subfolder_name,
-                                    "file_name": file_name,
-                                    "saved_name": save_name,
-                                    "save_path": save_path,
-                                    "message": f"Сохранение: {save_name}"
-                                })
-                                
+                        # Если есть файлы, обрабатываем их
+                        if current_files:
+                            # Определяем путь для сохранения результатов
+                            output_path = f"{current_path}/Обработанный"
+                            
+                            # Создаем папку для результатов
+                            async with httpx.AsyncClient() as create_client:
+                                create_response = await create_client.put(
+                                    "https://cloud-api.yandex.net/v1/disk/resources",
+                                    params={"path": output_path},
+                                    headers={"Authorization": f"OAuth {token}"},
+                                    timeout=30.0
+                                )
+                            
+                            # Обрабатываем файлы
+                            for file_idx, file_info in enumerate(current_files):
                                 try:
-                                    async with httpx.AsyncClient() as upload_client:
-                                        upload_link_response = await upload_client.get(
-                                            "https://cloud-api.yandex.net/v1/disk/resources/upload",
-                                            params={"path": save_path, "overwrite": "true"},
-                                            headers={"Authorization": f"OAuth {token}"},
-                                            timeout=30.0
-                                        )
-                                        
-                                        if upload_link_response.status_code != 200:
-                                            error_text = upload_link_response.text
-                                            logger.error(f"    Failed to get upload link for {save_path}: {upload_link_response.status_code} - {error_text}")
-                                            raise Exception(f"Failed to get upload link: {upload_link_response.status_code} - {error_text}")
-                                        
-                                        upload_url = upload_link_response.json()["href"]
-                                        upload_response = await upload_client.put(
-                                            upload_url,
-                                            content=white_bg_bytes,
-                                            headers={"Content-Type": "image/png"},
-                                            timeout=60.0
-                                        )
-                                        
-                                        if upload_response.status_code not in [201, 202]:
-                                            error_text = upload_response.text
-                                            logger.error(f"    Failed to upload {save_name}: {upload_response.status_code} - {error_text}")
-                                            raise Exception(f"Failed to upload file: {upload_response.status_code} - {error_text}")
+                                    file_name = file_info.get("name", "")
+                                    file_path = file_info.get("path", "")
                                     
-                                    results["files_processed"] += 1
-                                    logger.info(f"    ✓ Saved: {save_name} to {save_path}")
+                                    logger.info(f"  Processing file {file_idx + 1}/{len(current_files)} from {current_name}: {file_name}")
+                                    
+                                    # Отправляем информацию о начале обработки файла
+                                    yield await send_progress_update({
+                                        "type": "file_start",
+                                        "folder_name": current_name,
+                                        "file_index": file_idx + 1,
+                                        "total_files": len(current_files),
+                                        "file_name": file_name,
+                                        "message": f"Обработка файла {file_idx + 1}/{len(current_files)} из '{current_name}': {file_name}"
+                                    })
+                                    
+                                    # Скачиваем файл
+                                    file_is_public = use_public_api
+                                    
+                                    async with httpx.AsyncClient() as download_client:
+                                        if file_is_public:
+                                            # Для публичных файлов используем другой endpoint
+                                            public_file_path = f"{current_path}/{file_name}" if current_path else file_name
+                                            link_response = await download_client.get(
+                                                "https://cloud-api.yandex.net/v1/disk/public/resources/download",
+                                                params={"public_key": public_key, "path": public_file_path},
+                                                headers={"Authorization": f"OAuth {token}"},
+                                                timeout=30.0
+                                            )
+                                        else:
+                                            # Для приватных файлов используем обычный endpoint
+                                            link_response = await download_client.get(
+                                                "https://cloud-api.yandex.net/v1/disk/resources/download",
+                                                params={"path": file_path},
+                                                headers={"Authorization": f"OAuth {token}"},
+                                                timeout=30.0
+                                            )
+                                        
+                                        if link_response.status_code != 200:
+                                            raise Exception(f"Failed to get download link: {link_response.status_code}")
+                                        
+                                        download_url = link_response.json()["href"]
+                                        file_response = await download_client.get(download_url, timeout=60.0, follow_redirects=True)
+                                        
+                                        if file_response.status_code != 200:
+                                            raise Exception(f"Failed to download file: {file_response.status_code}")
+                                        
+                                        image_bytes = file_response.content
+                                    
+                                    # Обрабатываем через удаление фона
+                                    yield await send_progress_update({
+                                        "type": "processing",
+                                        "folder_name": current_name,
+                                        "file_name": file_name,
+                                        "step": "background_removal",
+                                        "message": f"Удаление фона: {file_name}"
+                                    })
+                                    
+                                    # Добавляем задержку между запросами для избежания rate limiting
+                                    if file_idx > 0:
+                                        delay_seconds = 11
+                                        await asyncio.sleep(delay_seconds)
+                                    
+                                    processed_bytes = await MODELS[model](image_bytes, api_key, None)
+                                    background_removal_count += 1
+                                    
+                                    # Размещаем на белом фоне с заданным размером
+                                    processed_img = Image.open(io.BytesIO(processed_bytes))
+                                    template_width = max(100, min(5000, width))
+                                    template_height = max(100, min(5000, height))
+                                    template_img = Image.new("RGB", (template_width, template_height), "white")
+                                    
+                                    img_width, img_height = processed_img.size
+                                    scale_width = template_width / img_width
+                                    scale_height = template_height / img_height
+                                    scale = min(scale_width, scale_height)
+                                    
+                                    new_width = int(img_width * scale)
+                                    new_height = int(img_height * scale)
+                                    processed_img = processed_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                                    
+                                    x = (template_width - new_width) // 2
+                                    y = (template_height - new_height) // 2
+                                    
+                                    result = template_img.copy()
+                                    if processed_img.mode == "RGBA":
+                                        result.paste(processed_img, (x, y), processed_img)
+                                    else:
+                                        result.paste(processed_img, (x, y))
+                                    
+                                    # Сохраняем в bytes
+                                    output = io.BytesIO()
+                                    result.save(output, format="PNG")
+                                    output.seek(0)
+                                    white_bg_bytes = output.read()
+                                    
+                                    # Сохраняем на Yandex Disk
+                                    save_name = f"{file_name.rsplit('.', 1)[0]}_processed.png"
+                                    save_path = f"{output_path}/{save_name}"
+                                    
+                                    yield await send_progress_update({
+                                        "type": "saving",
+                                        "folder_name": current_name,
+                                        "file_name": file_name,
+                                        "saved_name": save_name,
+                                        "save_path": save_path,
+                                        "message": f"Сохранение: {save_name}"
+                                    })
+                                    
+                                    try:
+                                        async with httpx.AsyncClient() as upload_client:
+                                            upload_link_response = await upload_client.get(
+                                                "https://cloud-api.yandex.net/v1/disk/resources/upload",
+                                                params={"path": save_path, "overwrite": "true"},
+                                                headers={"Authorization": f"OAuth {token}"},
+                                                timeout=30.0
+                                            )
+                                            
+                                            if upload_link_response.status_code != 200:
+                                                error_text = upload_link_response.text
+                                                logger.error(f"    Failed to get upload link for {save_path}: {upload_link_response.status_code} - {error_text}")
+                                                raise Exception(f"Failed to get upload link: {upload_link_response.status_code} - {error_text}")
+                                            
+                                            upload_url = upload_link_response.json()["href"]
+                                            upload_response = await upload_client.put(
+                                                upload_url,
+                                                content=white_bg_bytes,
+                                                headers={"Content-Type": "image/png"},
+                                                timeout=60.0
+                                            )
+                                            
+                                            if upload_response.status_code not in [201, 202]:
+                                                error_text = upload_response.text
+                                                logger.error(f"    Failed to upload {save_name}: {upload_response.status_code} - {error_text}")
+                                                raise Exception(f"Failed to upload file: {upload_response.status_code} - {error_text}")
+                                        
+                                        results["files_processed"] += 1
+                                        logger.info(f"    ✓ Saved: {save_name} to {save_path}")
+                                        
+                                        yield await send_progress_update({
+                                            "type": "file_complete",
+                                            "folder_name": current_name,
+                                            "file_name": file_name,
+                                            "saved_name": save_name,
+                                            "message": f"✓ Файл обработан и сохранен: {save_name} в {output_path}"
+                                        })
+                                    except Exception as save_error:
+                                        error_msg = f"Ошибка сохранения {save_name}: {str(save_error)}"
+                                        logger.error(f"    {error_msg}")
+                                        results["errors"].append(error_msg)
+                                        yield await send_progress_update({
+                                            "type": "file_error",
+                                            "folder_name": current_name,
+                                            "file_name": file_name,
+                                            "error": error_msg,
+                                            "message": f"⚠️ {error_msg}"
+                                        })
+                                        continue
                                     
                                     yield await send_progress_update({
                                         "type": "file_complete",
-                                        "folder_name": subfolder_name,
+                                        "folder_name": current_name,
                                         "file_name": file_name,
                                         "saved_name": save_name,
-                                        "message": f"✓ Файл обработан и сохранен: {save_name} в {subfolder_output_path}"
+                                        "message": f"✓ Файл обработан и сохранен: {save_name}"
                                     })
-                                except Exception as save_error:
-                                    error_msg = f"Ошибка сохранения {save_name}: {str(save_error)}"
-                                    logger.error(f"    {error_msg}")
-                                    results["errors"].append(error_msg)
-                                    yield await send_progress_update({
-                                        "type": "file_error",
-                                        "folder_name": subfolder_name,
-                                        "file_name": file_name,
-                                        "error": error_msg,
-                                        "message": f"⚠️ {error_msg}"
-                                    })
-                                    continue
-                                
-                                yield await send_progress_update({
-                                    "type": "file_complete",
-                                    "folder_name": subfolder_name,
-                                    "file_name": file_name,
-                                    "saved_name": save_name,
-                                    "message": f"✓ Файл обработан и сохранен: {save_name}"
-                                })
-                                
-                                # Для первой фотографии создаем версию с дизайном (размещение на фоне)
-                                if file_idx == 0:
+                                    
+                                    # Для первой фотографии создаем версию с дизайном (размещение на фоне)
+                                    if file_idx == 0 and is_first_in_folder:
                                     try:
                                         # Получаем путь к фону
                                         background_paths = [
@@ -2419,7 +2437,7 @@ async def batch_process_folders(
                                             
                                             yield await send_progress_update({
                                                 "type": "design_start",
-                                                "folder_name": subfolder_name,
+                                                "folder_name": current_name,
                                                 "file_name": file_name,
                                                 "message": f"Создание дизайна для: {file_name}"
                                             })
@@ -2453,7 +2471,7 @@ async def batch_process_folders(
                                             if design_bytes:
                                                 # Сохраняем дизайн на Yandex Disk в ту же папку
                                                 design_name = f"{file_name.rsplit('.', 1)[0]}_design.png"
-                                                design_save_path = f"{subfolder_output_path}/{design_name}"
+                                                design_save_path = f"{output_path}/{design_name}"
                                                 
                                                 async with httpx.AsyncClient() as design_client:
                                                     upload_link_response = await design_client.get(
@@ -2478,7 +2496,7 @@ async def batch_process_folders(
                                                             
                                                             yield await send_progress_update({
                                                                 "type": "design_complete",
-                                                                "folder_name": subfolder_name,
+                                                                "folder_name": current_name,
                                                                 "file_name": file_name,
                                                                 "design_name": design_name,
                                                                 "message": f"✓ Дизайн создан и сохранен: {design_name}"
@@ -2487,36 +2505,42 @@ async def batch_process_folders(
                                     except Exception as e:
                                         logger.warning(f"    Failed to create design for {file_name}: {str(e)}")
                                         results["errors"].append(f"Design creation failed: {str(e)}")
-                            
-                            except Exception as e:
-                                logger.error(f"    Error processing {file_info.get('name', 'unknown')}: {str(e)}")
-                                results["errors"].append(f"{file_info.get('name', 'unknown')}: {str(e)}")
-                                continue
+                                
+                                except Exception as e:
+                                    logger.error(f"    Error processing {file_info.get('name', 'unknown')}: {str(e)}")
+                                    results["errors"].append(f"{file_info.get('name', 'unknown')}: {str(e)}")
+                                    continue
                         
-                        # Подсчитываем количество успешно обработанных файлов из этой подпапки
-                        # (results["files_processed"] содержит общее количество, нужно отслеживать отдельно)
-                        # Для простоты используем количество файлов в подпапке
-                        subfolder_files_count = len(subfolder_files)
-                        
-                        # Отправляем сообщение о завершении обработки подпапки
-                        yield await send_progress_update({
-                            "type": "folder_complete",
-                            "folder_name": subfolder_name,
-                            "folder_index": subfolder_idx,
-                            "files_processed": subfolder_files_count,
-                            "message": f"✓ Подпапка {subfolder_name} обработана: {subfolder_files_count} файлов сохранено в {subfolder_output_path}"
-                        })
-                            
+                        # Рекурсивно обрабатываем все подпапки
+                        for subfolder in current_subfolders:
+                            subfolder_path = subfolder.get("path", "")
+                            subfolder_name = subfolder.get("name", "")
+                            await process_folder_recursive(subfolder_path, subfolder_name, depth + 1, max_depth, False)
+                
                 except Exception as e:
-                    logger.error(f"Error processing subfolder {subfolder_name}: {str(e)}")
-                    results["errors"].append(f"Подпапка {subfolder_name}: {str(e)}")
+                    logger.error(f"Error processing folder {current_name}: {str(e)}")
+                    results["errors"].append(f"Папка {current_name}: {str(e)}")
                     yield await send_progress_update({
                         "type": "folder_error",
-                        "folder_name": subfolder_name,
+                        "folder_name": current_name,
                         "error": str(e),
-                        "message": f"✗ Ошибка обработки подпапки {subfolder_name}: {str(e)}"
+                        "message": f"✗ Ошибка обработки папки {current_name}: {str(e)}"
                     })
-                    continue
+            
+            # Обрабатываем подпапки рекурсивно
+            for subfolder_idx, subfolder in enumerate(subfolders, 1):
+                subfolder_name = subfolder.get("name", "")
+                subfolder_path = subfolder.get("path", "")
+                
+                yield await send_progress_update({
+                    "type": "folder_start",
+                    "folder_index": subfolder_idx,
+                    "total_folders": len(subfolders),
+                    "folder_name": subfolder_name,
+                    "message": f"Обработка подпапки {subfolder_idx}/{len(subfolders)}: {subfolder_name}"
+                })
+                
+                await process_folder_recursive(subfolder_path, subfolder_name, depth=0, max_depth=10, is_first_in_folder=True)
             
             # Обрабатываем файлы напрямую в главной папке (если есть)
             if files:
