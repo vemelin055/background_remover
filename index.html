@@ -158,9 +158,14 @@
                                 <div class="spinner"></div>
                                 <p>Размещение на фоне...</p>
                             </div>
-                            <div id="promptEditor" style="display: none; width: 100%; margin-bottom: 16px;">
+                            <div class="config-section" style="margin-bottom: 16px;">
+                                <label class="label">Фон дизайна:</label>
+                                <input type="file" id="backgroundDesignInput" class="input" accept="image/*" style="margin-bottom: 8px;">
+                                <small style="color: var(--text-color); opacity: 0.7; display: block; margin-top: 4px;">Загрузите изображение фона для дизайна</small>
+                            </div>
+                            <div id="promptEditor" style="display: block; width: 100%; margin-bottom: 16px;">
                                 <label style="display: block; margin-bottom: 8px; color: var(--text-color); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Промпт для AI:</label>
-                                <textarea id="backgroundPrompt" class="input" rows="8" style="width: 100%; font-family: 'Inter', sans-serif; resize: vertical; min-height: 120px;"></textarea>
+                                <textarea id="backgroundPrompt" class="input" rows="8" style="width: 100%; font-family: 'Inter', sans-serif; resize: vertical; min-height: 120px;" placeholder="Введите промпт для генерации дизайна..."></textarea>
                             </div>
                             <button id="placeOnBackgroundBtn" class="btn btn-primary" style="display: none;">Разместить на фоне</button>
                             <button id="downloadBackgroundBtn" class="btn btn-primary" style="display: none;">Скачать</button>
