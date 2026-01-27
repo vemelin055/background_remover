@@ -21,14 +21,64 @@ from bs4 import BeautifulSoup
 
 load_dotenv()
 
+# Настройка логирования с цветами для Railway
+import sys
+
+# Проверяем, поддерживает ли терминал цвета
+def supports_color():
+    """Проверяет, поддерживает ли терминал цвета"""
+    if hasattr(sys.stdout, 'isatty') and sys.stdout.isatty():
+        return True
+    # Railway всегда поддерживает цвета
+    return os.getenv('RAILWAY_ENVIRONMENT') is not None
+
+# ANSI коды для цветов
+class Colors:
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+
+class ColoredFormatter(logging.Formatter):
+    """Форматтер с цветами для логов"""
+    def __init__(self, use_colors=True):
+        super().__init__()
+        self.use_colors = use_colors and supports_color()
+    
+    def format(self, record):
+        if self.use_colors:
+            if record.levelno == logging.DEBUG:
+                record.levelname = f"{Colors.CYAN}{record.levelname}{Colors.RESET}"
+            elif record.levelno == logging.INFO:
+                record.levelname = f"{Colors.GREEN}{record.levelname}{Colors.RESET}"
+            elif record.levelno == logging.WARNING:
+                record.levelname = f"{Colors.YELLOW}{record.levelname}{Colors.RESET}"
+            elif record.levelno == logging.ERROR:
+                record.levelname = f"{Colors.RED}{record.levelname}{Colors.RESET}"
+            elif record.levelno == logging.CRITICAL:
+                record.levelname = f"{Colors.RED}{Colors.BOLD}{record.levelname}{Colors.RESET}"
+        
+        return super().format(record)
+
 # Настройка логирования
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+formatter = ColoredFormatter(use_colors=True)
+
+file_handler = logging.FileHandler('costs.log', encoding='utf-8')
+file_handler.setFormatter(logging.Formatter(log_format))
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('costs.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
+    format=log_format,
+    handlers=[file_handler, stream_handler]
 )
 cost_logger = logging.getLogger('costs')
 cost_logger.setLevel(logging.INFO)
@@ -637,6 +687,10 @@ Do not crop or resize the image."""
         }
         
         logging.info(f"Running prunaai/p-image-edit model...")
+        
+        # Добавляем задержку перед созданием дизайна для избежания rate limit (6 запросов в минуту)
+        logging.info(f"⏳ Ожидание перед созданием дизайна (rate limit protection)...")
+        await asyncio.sleep(11)
         
         # Запускаем модель
         output = await asyncio.to_thread(
@@ -1682,6 +1736,10 @@ async def batch_process_products(
                                     "aspect_ratio": "4:3"
                                 }
                                 
+                                # Добавляем задержку перед созданием дизайна для избежания rate limit (6 запросов в минуту)
+                                logger.info(f"    ⏳ Ожидание перед созданием дизайна (rate limit protection)...")
+                                await asyncio.sleep(11)
+                                
                                 design_output = await asyncio.to_thread(
                                     replicate.run,
                                     "prunaai/p-image-edit",
@@ -2234,6 +2292,11 @@ async def batch_process_folders(
                         "file_name": file_name,
                         "message": f"Создание дизайна для: {file_name}"
                     })
+                    
+                    # Добавляем задержку перед созданием дизайна для избежания rate limit (6 запросов в минуту)
+                    # Ждем 11 секунд между запросами для соблюдения лимита
+                    logger.info(f"    ⏳ Ожидание перед созданием дизайна (rate limit protection)...")
+                    await asyncio.sleep(11)
                     
                     design_output = await asyncio.to_thread(
                         replicate.run,
