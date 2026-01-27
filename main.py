@@ -2515,7 +2515,8 @@ async def batch_process_folders(
                         for subfolder in current_subfolders:
                             subfolder_path = subfolder.get("path", "")
                             subfolder_name = subfolder.get("name", "")
-                            await process_folder_recursive(subfolder_path, subfolder_name, depth + 1, max_depth, False)
+                            async for update in process_folder_recursive(subfolder_path, subfolder_name, depth + 1, max_depth, False):
+                                yield update
                 
                 except Exception as e:
                     logger.error(f"Error processing folder {current_name}: {str(e)}")
@@ -2540,7 +2541,8 @@ async def batch_process_folders(
                     "message": f"Обработка подпапки {subfolder_idx}/{len(subfolders)}: {subfolder_name}"
                 })
                 
-                await process_folder_recursive(subfolder_path, subfolder_name, depth=0, max_depth=10, is_first_in_folder=True)
+                async for update in process_folder_recursive(subfolder_path, subfolder_name, depth=0, max_depth=10, is_first_in_folder=True):
+                    yield update
             
             # Обрабатываем файлы напрямую в главной папке (если есть)
             if files:
