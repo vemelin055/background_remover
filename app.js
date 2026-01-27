@@ -598,17 +598,32 @@ class App {
             separator.textContent = '─────────────────';
             select.appendChild(separator);
             
-            // Добавляем папки (сортируем по имени)
-            const sortedFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
+            // Сортируем папки по пути (для правильного отображения вложенности)
+            const sortedFolders = [...folders].sort((a, b) => {
+                // Сначала сортируем по глубине, затем по пути
+                const depthA = a.depth || 0;
+                const depthB = b.depth || 0;
+                if (depthA !== depthB) {
+                    return depthA - depthB;
+                }
+                return a.path.localeCompare(b.path);
+            });
+            
             let defaultSelected = false;
             
             sortedFolders.forEach(folder => {
                 const option = document.createElement('option');
                 option.value = folder.path;
-                option.textContent = `📁 ${folder.name}`;
                 
-                // Устанавливаем "Тест комтех" как выбранный по умолчанию
-                if (folder.name === 'Тест комтех' && !defaultSelected) {
+                // Формируем отображаемое имя с учетом вложенности
+                const depth = folder.depth || 0;
+                const indent = '  '.repeat(depth); // 2 пробела на уровень вложенности
+                const displayName = depth > 0 ? `${indent}└─ ${folder.name}` : `📁 ${folder.name}`;
+                
+                option.textContent = displayName;
+                
+                // Устанавливаем "Тест комтех" как выбранный по умолчанию (только корневую)
+                if (folder.name === 'Тест комтех' && folder.depth === 0 && !defaultSelected) {
                     option.selected = true;
                     defaultSelected = true;
                 }
@@ -624,7 +639,8 @@ class App {
             // Обновляем счетчик папок
             const foldersCount = document.getElementById('foldersCount');
             if (foldersCount) {
-                foldersCount.textContent = `Найдено ${sortedFolders.length} папок. Выберите папку из списка`;
+                const rootFolders = sortedFolders.filter(f => (f.depth || 0) === 0).length;
+                foldersCount.textContent = `Найдено ${sortedFolders.length} папок (${rootFolders} корневых + подпапки). Выберите папку из списка`;
             }
             
             console.log(`Загружено ${sortedFolders.length} папок из Yandex Disk`);
